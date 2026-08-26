@@ -1,4 +1,5 @@
 const express = require('express');
+const crypto = require('crypto');
 const { Pool } = require('pg');
 const redis = require('redis');
 const cors = require('cors');
@@ -81,6 +82,43 @@ app.get('/api/venues', async (req, res) => {
     } catch (err) {
         console.error(err.message);
         res.status(500).json({ error: 'Server error' });
+    }
+});
+
+// ==========================================
+// TEMPORARY ROUTE: Upgrade Database for Transfers
+// ==========================================
+app.get('/api/upgrade-db', async (req, res) => {
+    try {
+        await pgPool.query(`
+            ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_user_id_fkey;
+            ALTER TABLE tickets ALTER COLUMN user_id TYPE VARCHAR(255);
+            
+            ALTER TABLE tickets 
+            ADD COLUMN IF NOT EXISTS transfer_token VARCHAR(255), 
+            ADD COLUMN IF NOT EXISTS transfer_recipient_email VARCHAR(255), 
+            ADD COLUMN IF NOT EXISTS transfer_status VARCHAR(50) DEFAULT 'none';
+        `);
+        res.send('✅ Database upgraded for transfers!');
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// ==========================================
+// TEMPORARY ROUTE: Give myself a ticket
+// ==========================================
+app.get('/api/seed-ticket', async (req, res) => {
+    try {
+        // This forces ticket #1 to exist with a price!
+        await pgPool.query(`
+            INSERT INTO tickets (id, user_id, status, price) 
+            VALUES (1, 'user_joshua_123', 'owned', 150000)
+            ON CONFLICT (id) 
+            DO UPDATE SET user_id = 'user_joshua_123', status = 'owned', price = 150000;
+        `);
+        res.send('🎟️ Ticket #1 successfully added to your wallet!');
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -235,3 +273,95 @@ async function startServer() {
 }
 
 startServer();
+
+// ==========================================
+// TICKET TRANSFER: Initiate the Transfer
+// ==========================================
+app.post('/api/tickets/transfer', async (req, res) => {
+    try {
+        const { ticket_id, owner_id, recipient_email } = req.body;
+
+        // 1. Generate a secure, 40-character random token
+        const transferToken = crypto.randomBytes(20).toString('hex');
+
+        // 2. Update the ticket to 'pending' transfer
+        const updateQuery = `
+            UPDATE tickets 
+            SET transfer_token = $1, transfer_recipient_email = $2, transfer_status = 'pending' 
+            WHERE id = $3 AND user_id = $4
+            RETURNING *;
+        `;
+        const result = await pgPool.query(updateQuery, [transferToken, recipient_email, ticket_id, owner_id]);
+
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'Ticket not found or you do not own it.' });
+        }
+
+        // 3. Create the magic acceptance link
+        const acceptLink = `http://localhost:5000/api/tickets/accept?token=${transferToken}`;
+
+        // 4. Simulate the Email in the console
+        console.log('\n=========================================');
+        console.log('📧 NEW EMAIL SENT TO:', recipient_email);
+        console.log('Subject: You have been sent a ticket for Lagos Tech Summit!');
+        console.log('Body: Please click the link below to accept your ticket.');
+        console.log('🔗 ACCEPT LINK:', acceptLink);
+        console.log('=========================================\n');
+
+        res.json({
+            status: 'success',
+            message: 'Transfer initiated! Check server console for the email.',
+            ticket_id: ticket_id,
+            status: 'pending'
+        });
+
+    } catch (err) {
+        console.error('Transfer Error:', err.message);
+        res.status(500).json({ error: 'Server error' });
+    }
+});
+// ==========================================
+// TICKET TRANSFER: Accept the Ticket
+// ==========================================
+app.get('/api/tickets/accept', async (req, res) => {
+    try {
+        // 1. Grab the secure token from the URL (?token=xyz)
+        const { token } = req.query;
+
+        if (!token) {
+            return res.status(400).send('❌ No token provided.');
+        }
+
+        // 2. Find the pending ticket and officially change the owner
+        const updateQuery = `
+            UPDATE tickets 
+            SET 
+                user_id = 'new_friend_user_999', -- The ticket now belongs to the friend!
+                transfer_token = NULL,
+                transfer_recipient_email = NULL,
+                transfer_status = 'none'
+            WHERE transfer_token = $1 AND transfer_status = 'pending'
+            RETURNING *;
+        `;
+        
+        const result = await pgPool.query(updateQuery, [token]);
+
+        if (result.rows.length === 0) {
+            return res.status(400).send('❌ Invalid, used, or expired transfer link.');
+        }
+
+        // 3. Send a beautiful success page back to the friend
+        res.send(`
+            <div style="font-family: 'Segoe UI', Tahoma, sans-serif; text-align: center; margin-top: 100px; color: #fff; background-color: #121212; padding: 50px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto; border: 1px solid #333;">
+                <h1 style="color: #4CAF50;">🎉 Ticket Accepted!</h1>
+                <p style="font-size: 18px;">You are now the official owner of Ticket #${result.rows[0].id}.</p>
+                <p style="color: #aaa;">Your secure transfer is complete.</p>
+            </div>
+            <style>body { background-color: #000; }</style>
+        `);
+
+    } catch (err) {
+        console.error('Acceptance Error:', err.message);
+        res.status(500).send('❌ Server error during acceptance.');
+    }
+});

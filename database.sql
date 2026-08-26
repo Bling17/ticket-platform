@@ -40,5 +40,10 @@ CREATE TABLE tickets (
     seat_id INT REFERENCES seats(id),
     price DECIMAL(10, 2) NOT NULL,
     status VARCHAR(20) DEFAULT 'available', -- available, locked, sold
-    user_id INT REFERENCES users(id) -- Null until purchased
+    user_id INT REFERENCES users(id), -- Null until purchased
+    
+-- NEW COLUMNS FOR TRANSFERS --
+    transfer_token VARCHAR(255),
+    transfer_recipient_email VARCHAR(255),
+    transfer_status VARCHAR(50) DEFAULT 'none' -- Can be 'none', 'pending', or 'completed'
 );
