@@ -37,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     document.getElementById('venue-name').textContent = `${event.title} • ${event.venue}`;
                     
-                    // Trigger our new Dynamic Engine!
+                    // Trigger our Dynamic Engine!
                     renderDynamicSeats(event.id); 
                 });
 
@@ -127,7 +127,51 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-}); // <--- This cleanly closes the DOMContentLoaded block!
+
+    // ==========================================
+    // 5. DYNAMIC SEARCH LOGIC
+    // ==========================================
+    const searchBtn = document.getElementById('search-btn');
+    const searchInput = document.getElementById('search-input');
+
+    if (searchBtn && searchInput) {
+        searchBtn.addEventListener('click', async () => {
+            const keyword = searchInput.value.trim();
+            if (!keyword) return alert('Please enter an artist or event name.');
+
+            // Show a loading state
+            const originalText = searchBtn.textContent;
+            searchBtn.textContent = 'Searching...';
+            eventGrid.innerHTML = '<p style="text-align: center; width: 100%; margin-top: 50px; font-weight: bold; color: white;">Fetching live data from Ticketmaster...</p>';
+
+            try {
+                // 1. Search Ticketmaster and update the database
+                const searchRes = await fetch(`/api/search?keyword=${encodeURIComponent(keyword)}`);
+                const searchData = await searchRes.json();
+
+                if (!searchRes.ok) {
+                    alert(searchData.error || 'No events found.');
+                    searchBtn.textContent = originalText;
+                    loadEvents(); // Reload old events if search fails
+                    return;
+                }
+
+                // 2. Generate new interactive seats for these new events
+                await fetch('/api/generate-seats');
+
+                // 3. Reload the UI grid with the brand new data!
+                await loadEvents();
+            } catch (error) {
+                console.error('Search failed:', error);
+                alert('An error occurred while searching. Is your server running?');
+            } finally {
+                searchBtn.textContent = originalText;
+                searchInput.value = ''; // Clear the search bar
+            }
+        });
+    }
+
+}); // <--- Cleanly closes the DOMContentLoaded block!
 
 // ==========================================
 // 4. DYNAMIC SEAT MAP ENGINE

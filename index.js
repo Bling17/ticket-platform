@@ -12,8 +12,8 @@ const nodemailer = require('nodemailer');
 const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
-        user: 'rowlandjosh17@gmail.com', // Your actual Gmail
-        pass: 'tryp bstv wjae cakh' // No spaces
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASSWORD
     }
 });
 
@@ -25,11 +25,11 @@ app.use(express.static('public'));
 
 // 1. Connect to PostgreSQL
 const pgPool = new Pool({
-    user: 'postgres',
-    host: 'localhost',
-    database: 'postgres', // Matches the default Docker DB
-    password: 'mysecretpassword', 
-    port: 5432,
+    user: process.env.DB_USER || 'postgres',
+    host: process.env.DB_HOST || 'localhost',
+    database: process.env.DB_NAME || 'postgres',
+    password: process.env.DB_PASSWORD,
+    port: Number(process.env.DB_PORT || 5432),
 });
 
 pgPool.on('connect', () => {
@@ -269,6 +269,106 @@ app.get('/api/events', async (req, res) => {
     }
 });
 
+// ==========================================
+// TICKETMASTER API: Fetch Live Concerts!
+// ==========================================
+app.get('/api/fetch-live', async (req, res) => {
+    try {
+        const apiKey = process.env.TICKETMASTER_API_KEY;
+        if (!apiKey) return res.status(500).send('Ticketmaster API key is not configured.');
+
+        // Let's search for Stray Kids! (You can change this to 'BTS' or 'K-Pop' later)
+        const keyword = 'Stray Kids';
+        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        // Check if Ticketmaster found anything
+        if (!data._embedded || !data._embedded.events) {
+            return res.status(404).send('No live events found for this artist right now.');
+        }
+
+        const liveEvents = data._embedded.events;
+
+        // Drop strict constraints and clear the old hardcoded events
+        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
+        await pgPool.query(`DELETE FROM events;`);
+
+        // Loop through the live Ticketmaster data and save it to PostgreSQL
+        let insertedCount = 0;
+        for (let event of liveEvents) {
+            const title = event.name;
+            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
+            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
+
+            // Find a high-quality 16:9 ratio image from their promo materials
+            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
+
+            await pgPool.query(`
+                INSERT INTO events (title, date, venue, image_url)
+                VALUES ($1, $2, $3, $4)
+            `, [title, date, venue, image_url]);
+
+            insertedCount++;
+        }
+
+        res.send(`🔥 Success! ${insertedCount} live Ticketmaster events for ${keyword} have been loaded into your database!`);
+    } catch (err) {
+        console.error('API Error:', err);
+        res.status(500).send('Server error while fetching from Ticketmaster.');
+    }
+});
+
+// ==========================================
+// DYNAMIC SEARCH: Fetch specific events from Ticketmaster
+// ==========================================
+app.get('/api/search', async (req, res) => {
+    try {
+        const keyword = req.query.keyword;
+        if (!keyword) return res.status(400).json({ error: 'Please provide a search term.' });
+
+        const apiKey = process.env.TICKETMASTER_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Ticketmaster API key is not configured.' });
+        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (!data._embedded || !data._embedded.events) {
+            return res.status(404).json({ error: 'No live events found for this search.' });
+        }
+
+        // 1. Drop strict constraints and clear old events/seats
+        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
+        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
+        await pgPool.query(`DELETE FROM events;`);
+        await pgPool.query(`DELETE FROM seats;`);
+
+        const liveEvents = data._embedded.events;
+        let insertedCount = 0;
+
+        // 2. Loop through the live Ticketmaster data and save it
+        for (let event of liveEvents) {
+            const title = event.name;
+            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
+            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
+            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
+
+            await pgPool.query(`
+                INSERT INTO events (title, date, venue, image_url)
+                VALUES ($1, $2, $3, $4)
+            `, [title, date, venue, image_url]);
+
+            insertedCount++;
+        }
+
+        res.json({ message: 'Success', count: insertedCount });
+    } catch (err) {
+        console.error('Search Error:', err);
+        res.status(500).json({ error: 'Server error while fetching from Ticketmaster.' });
+    }
+});
 // --- SEATS ---
 
 // Create a physical seat in a venue
