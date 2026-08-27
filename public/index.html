@@ -17,6 +17,7 @@
             <li>Family</li>
         </ul>
         <div class="nav-right">
+            <a href="#" id="nav-my-tickets" class="sign-in" style="margin-right: 20px;">My Tickets</a>
             <a href="#" class="sign-in">Sign In/Register</a>
         </div>
     </nav>
@@ -42,14 +43,10 @@
 
     <!-- 3. The Main Content Area -->
     <main class="main-content">
-        <div class="tm-event-grid">
-            
-            <!-- 1. The Large Featured Event (Left Side) -->
-            <div id="mcr-card" class="event-card featured">
-                <div class="event-info">
-                    <h2 class="mcr-title">My Chemical Romance</h2>
-                </div>
-            </div>
+        <!-- Dynamic Event Grid -->
+        <div class="tm-event-grid" id="dynamic-event-grid">
+            <!-- JavaScript will inject the image cards here! -->
+        </div>
 
             <!-- 2. Top Right Events -->
             <div class="event-card disney">
@@ -96,6 +93,30 @@
                 <p id="checkout-message"></p>
             </section>
         </section>
+
+        <!-- My Tickets Section (Hidden by default) -->
+        <section id="my-tickets-section" class="hidden" style="color: white; margin-top: 30px;">
+            <h2>My Tickets</h2>
+            <div class="ticket-card">
+                <span style="font-size: 12px; color: #ccc; font-weight: bold;">LAGOS TECH SUMMIT</span>
+                <h3 style="margin: 5px 0 15px 0; font-size: 24px;">General Admission</h3>
+                <p style="margin: 5px 0;">Seat: <strong>A1</strong></p>
+                <p style="margin: 5px 0; color: #4CAF50;">Status: <strong>Owned (Ticket #1)</strong></p>
+                <button id="open-transfer-btn" class="search-btn" style="height: 40px; margin-top: 20px; width: 100%;">Transfer to a Friend</button>
+            </div>
+        </section>
+
+        <!-- Transfer Modal Pop-up -->
+        <div id="transfer-modal" class="modal hidden">
+            <div class="modal-content">
+                <span class="close-btn">&times;</span>
+                <h2 style="color: #111; margin-top: 0;">Transfer Ticket</h2>
+                <p style="color: #555;">Enter your friend's email address to securely transfer Ticket #1.</p>
+                <input type="email" id="friend-email" placeholder="e.g., friend@example.com" class="modal-input">
+                <button id="submit-transfer-btn" class="search-btn" style="width: 100%; margin-top: 15px; height: 45px;">Send Ticket Link</button>
+                <p id="transfer-message" style="margin-top: 15px; font-weight: bold; text-align: center;"></p>
+            </div>
+        </div>
     </main>
 
     <script src="app.js"></script>

@@ -1,120 +1,185 @@
 document.addEventListener('DOMContentLoaded', () => {
-    const mcrCard = document.getElementById('mcr-card');
-    const eventGrid = document.querySelector('.tm-event-grid');
+    const eventGrid = document.getElementById('dynamic-event-grid');
     const ticketSection = document.getElementById('ticket-purchasing');
     const backBtn = document.getElementById('back-btn');
+    const navMyTickets = document.getElementById('nav-my-tickets');
+    const myTicketsSection = document.getElementById('my-tickets-section');
 
-    // 1. Navigation: Click the Event Card to view seats
-    mcrCard.addEventListener('click', () => {
-        eventGrid.classList.add('hidden');
-        ticketSection.classList.remove('hidden');
-        fetchVenueData();
-        renderTestSeats();
-        setupCheckout();
-    });
+    // ==========================================
+    // 1. Fetch Events and Build the UI
+    // ==========================================
+    async function loadEvents() {
+        try {
+            const response = await fetch('/api/events');
+            const events = await response.json();
+            
+            if (eventGrid) eventGrid.innerHTML = ''; 
+            
+            events.forEach((event, index) => {
+                const card = document.createElement('div');
+                card.className = index === 0 ? 'event-card featured' : 'event-card'; 
+                
+                card.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%), url('${event.image_url}')`;
+                card.style.backgroundSize = 'cover';
+                card.style.backgroundPosition = 'center';
+                
+                card.innerHTML = `
+                    <div class="card-content">
+                        <h3>${event.title}</h3>
+                        <p>${event.date} • ${event.venue}</p>
+                    </div>
+                `;
 
-    // 2. Navigation: Go back to Event Grid
-    backBtn.addEventListener('click', () => {
-        ticketSection.classList.add('hidden');
-        eventGrid.classList.remove('hidden');
-        document.getElementById('seat-map').innerHTML = ''; // Clear seats
-        document.getElementById('checkout-section').classList.add('hidden'); // Hide checkout
-    });
-});
+                card.addEventListener('click', () => {
+                    if (eventGrid) eventGrid.classList.add('hidden');
+                    if (myTicketsSection) myTicketsSection.classList.add('hidden');
+                    if (ticketSection) ticketSection.classList.remove('hidden');
+                    
+                    document.getElementById('venue-name').textContent = `${event.title} • ${event.venue}`;
+                    
+                    // Trigger our new Dynamic Engine!
+                    renderDynamicSeats(event.id); 
+                });
 
-// 3. Fetch Eko Convention Centre from PostgreSQL
-async function fetchVenueData() {
-    const venueNameDisplay = document.getElementById('venue-name');
-    try {
-        const response = await fetch('/api/venues');
-        const venues = await response.json();
-        if (venues.length > 0) {
-            venueNameDisplay.textContent = `${venues[0].name}, ${venues[0].city}`;
+                if (eventGrid) eventGrid.appendChild(card);
+            });
+        } catch (error) {
+            console.error('Error loading events:', error);
+            if (eventGrid) eventGrid.innerHTML = '<p style="color:red;">Failed to load events.</p>';
         }
-    } catch (error) {
-        console.error('Error fetching venue:', error);
     }
-}
 
-// 4. Render Seats & Redis Locking
-function renderTestSeats() {
-    const seatMap = document.getElementById('seat-map');
-    seatMap.innerHTML = ''; // clear previous
+    loadEvents(); // Run the function immediately!
 
-    for (let i = 1; i <= 12; i++) {
-        const seatDiv = document.createElement('div');
-        seatDiv.className = 'seat';
-        seatDiv.textContent = `A${i}`;
-        
-        seatDiv.addEventListener('click', async () => {
-            const ticketId = 1; 
-            const userId = 'user_joshua_123';
-            seatDiv.style.backgroundColor = '#ff9800'; 
-            seatDiv.textContent = '...';
+    // ==========================================
+    // 2. Navigation Logic
+    // ==========================================
+    if (backBtn) {
+        backBtn.addEventListener('click', () => {
+            if (ticketSection) ticketSection.classList.add('hidden');
+            if (eventGrid) eventGrid.classList.remove('hidden');
+            document.getElementById('seat-map').innerHTML = ''; 
+        });
+    }
+
+    if (navMyTickets) {
+        navMyTickets.addEventListener('click', () => {
+            if (eventGrid) eventGrid.classList.add('hidden');
+            if (ticketSection) ticketSection.classList.add('hidden');
+            if (myTicketsSection) myTicketsSection.classList.remove('hidden');
+        });
+    }
+
+    // ==========================================
+    // 3. Transfer UI Logic
+    // ==========================================
+    const modal = document.getElementById('transfer-modal');
+    const closeBtn = document.querySelector('.close-btn');
+    const openTransferBtn = document.getElementById('open-transfer-btn');
+    const submitTransferBtn = document.getElementById('submit-transfer-btn');
+
+    if (openTransferBtn) {
+        openTransferBtn.addEventListener('click', () => {
+            modal.classList.remove('hidden');
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', () => {
+            modal.classList.add('hidden');
+            document.getElementById('transfer-message').textContent = ''; 
+        });
+    }
+
+    if (submitTransferBtn) {
+        submitTransferBtn.addEventListener('click', async () => {
+            const email = document.getElementById('friend-email').value;
+            const msg = document.getElementById('transfer-message');
+            
+            if (!email) {
+                msg.textContent = 'Please enter an email address.';
+                msg.style.color = '#f44336';
+                return;
+            }
+
+            msg.textContent = 'Generating secure link...';
+            msg.style.color = '#555';
 
             try {
-                const response = await fetch('/api/tickets/lock', {
+                const response = await fetch('/api/tickets/transfer', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticket_id: ticketId, user_id: userId })
+                    body: JSON.stringify({ ticket_id: 1, owner_id: 'user_joshua_123', recipient_email: email })
                 });
                 
+                const data = await response.json();
+                
                 if (response.ok) {
-                    seatDiv.style.backgroundColor = '#f44336'; 
-                    seatDiv.style.borderColor = '#f44336';
-                    seatDiv.textContent = 'LOCKED';
-                    seatDiv.style.pointerEvents = 'none';
-                    
-                    document.getElementById('checkout-section').classList.remove('hidden');
-                    document.getElementById('checkout-seat-name').textContent = `A${i} (Locked for 10 min)`;
+                    msg.textContent = '✅ Transfer initiated! Check your real inbox.';
+                    msg.style.color = '#4CAF50';
                 } else {
-                    const data = await response.json();
-                    seatDiv.style.backgroundColor = '#2c2c2c'; 
-                    seatDiv.textContent = `A${i}`;
-                    alert(`Blocked: ${data.error}`);
+                    msg.textContent = `❌ Error: ${data.error}`;
+                    msg.style.color = '#f44336';
                 }
             } catch (error) {
-                console.error('Lock error:', error);
+                msg.textContent = 'Failed to connect to server.';
+                msg.style.color = '#f44336';
             }
         });
-        seatMap.appendChild(seatDiv);
     }
-}
+}); // <--- This cleanly closes the DOMContentLoaded block!
 
-// 5. Complete Purchase
-function setupCheckout() {
-    const buyBtn = document.getElementById('buy-btn');
-    const checkoutMessage = document.getElementById('checkout-message');
-    
-    // Remove old listeners to prevent double-firing
-    const newBuyBtn = buyBtn.cloneNode(true);
-    buyBtn.parentNode.replaceChild(newBuyBtn, buyBtn);
+// ==========================================
+// 4. DYNAMIC SEAT MAP ENGINE
+// ==========================================
+async function renderDynamicSeats(eventId) {
+    const seatMap = document.getElementById('seat-map');
+    seatMap.innerHTML = '<p style="color: #999;">Loading live seat map...</p>';
 
-    newBuyBtn.addEventListener('click', async () => {
-        newBuyBtn.textContent = 'Processing...';
-        newBuyBtn.disabled = true;
+    try {
+        const response = await fetch(`/api/events/${eventId}/seats`);
+        const seats = await response.json();
+        
+        seatMap.innerHTML = ''; 
 
-        try {
-            const response = await fetch('/api/tickets/buy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ ticket_id: 1, user_id: 'user_joshua_123' })
-            });
+        const seatGrid = document.createElement('div');
+        seatGrid.style.display = 'grid';
+        seatGrid.style.gridTemplateColumns = 'repeat(5, 1fr)'; 
+        seatGrid.style.gap = '10px';
+        seatGrid.style.marginTop = '20px';
 
-            if (response.ok) {
-                checkoutMessage.textContent = '🎉 Payment Successful!';
-                checkoutMessage.style.color = '#4CAF50';
-                newBuyBtn.style.display = 'none';
+        seats.forEach(seat => {
+            const seatEl = document.createElement('div');
+            seatEl.style.padding = '15px 5px';
+            seatEl.style.textAlign = 'center';
+            seatEl.style.borderRadius = '5px';
+            seatEl.style.fontWeight = 'bold';
+            seatEl.style.fontSize = '12px';
+            seatEl.textContent = `${seat.row} - ${seat.seat_number}`;
+
+            if (seat.status === 'available') {
+                seatEl.style.backgroundColor = '#4CAF50'; 
+                seatEl.style.color = 'white';
+                seatEl.style.cursor = 'pointer';
+
+                seatEl.addEventListener('click', () => {
+                    if (seatEl.style.backgroundColor === 'rgb(76, 175, 80)' || seatEl.style.backgroundColor === '#4CAF50') {
+                        seatEl.style.backgroundColor = '#026cdf'; 
+                    } else {
+                        seatEl.style.backgroundColor = '#4CAF50'; 
+                    }
+                });
             } else {
-                const data = await response.json();
-                checkoutMessage.textContent = `Error: ${data.error}`;
-                checkoutMessage.style.color = '#f44336';
-                newBuyBtn.textContent = 'Confirm Purchase';
-                newBuyBtn.disabled = false;
+                seatEl.style.backgroundColor = '#333'; 
+                seatEl.style.color = '#777';
+                seatEl.style.cursor = 'not-allowed';
             }
-        } catch (error) {
-            checkoutMessage.textContent = 'Failed to process payment.';
-            checkoutMessage.style.color = '#f44336';
-        }
-    });
+            
+            seatGrid.appendChild(seatEl);
+        });
+
+        seatMap.appendChild(seatGrid);
+    } catch (error) {
+        seatMap.innerHTML = '<p style="color:red;">Failed to load seat map.</p>';
+    }
 }

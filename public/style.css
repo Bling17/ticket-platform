@@ -235,3 +235,55 @@ body {
     text-align: center;
     border: 1px solid #333;
 }
+
+/* ========================================= */
+/* MY TICKETS & TRANSFER MODAL               */
+/* ========================================= */
+.ticket-card {
+    background: #1e1e1e;
+    padding: 25px;
+    border-radius: 8px;
+    border: 1px solid #333;
+    max-width: 350px;
+}
+
+.modal {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 8px;
+    max-width: 400px;
+    width: 90%;
+    position: relative;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+
+.close-btn {
+    position: absolute;
+    top: 10px; right: 20px;
+    font-size: 28px;
+    font-weight: bold;
+    cursor: pointer;
+    color: #555;
+}
+
+.close-btn:hover { color: #000; }
+
+.modal-input {
+    width: 100%;
+    padding: 12px;
+    margin-top: 10px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+    font-size: 16px;
+}
