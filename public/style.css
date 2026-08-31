@@ -1,289 +1,155 @@
-/* Base Reset */
 body {
+    background-color: #0f1015;
+    color: #ffffff;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
     padding: 0;
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #121212; /* Keeps the dark background for the images later */
 }
 
-/* 1. The Blue Navbar */
-.tm-navbar {
-    background-color: #026cdf;
-    color: white;
+/* Header & Navigation */
+.navbar {
     display: flex;
+    justify-content: space-between;
     align-items: center;
-    padding: 15px 30px;
-    height: 60px;
+    background-color: #026cdf;
+    padding: 15px 40px;
+    color: white;
 }
 
-.tm-navbar .logo {
+.navbar .logo {
     font-size: 24px;
     font-weight: 900;
-    margin-right: 40px;
+    font-style: italic;
     letter-spacing: -1px;
 }
 
-.tm-navbar .nav-links {
-    list-style: none;
+.navbar nav {
     display: flex;
     gap: 25px;
-    margin: 0;
-    padding: 0;
-    font-size: 15px;
+}
+
+.navbar nav a, .navbar .nav-links a {
+    color: white;
+    text-decoration: none;
+    font-size: 14px;
     font-weight: 600;
 }
 
-.tm-navbar .nav-links li {
-    cursor: pointer;
-}
-
-.tm-navbar .nav-right {
-    margin-left: auto;
-}
-
-.tm-navbar .sign-in {
-    color: white;
-    text-decoration: none;
-    font-weight: bold;
-}
-
-/* 2. The Search Container */
+/* Ticketmaster Search Bar Container */
 .tm-search-container {
     background-color: #026cdf;
-    padding: 0 30px 20px 30px;
+    padding: 20px 40px 30px 40px;
     display: flex;
     justify-content: center;
 }
 
-.search-box {
-    background-color: white;
+.tm-search-bar {
+    background: white;
+    padding: 8px;
     border-radius: 4px;
     display: flex;
-    width: 100%;
-    max-width: 1200px;
-    height: 65px;
+    width: 85%;
+    max-width: 1000px;
+    gap: 2px;
     align-items: center;
-    padding: 5px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 
-.search-section {
-    display: flex;
-    flex-direction: column;
-    padding: 0 20px;
-    justify-content: center;
-}
-
-.search-section.divider {
-    border-left: 1px solid #ddd;
-}
-
-.search-section.flex-grow {
-    flex-grow: 1;
-}
-
-.search-section .label {
-    font-size: 11px;
-    font-weight: bold;
-    color: #555;
-    margin-bottom: 3px;
-}
-
-.search-section .value {
-    font-size: 15px;
-    color: #111;
-    font-weight: 500;
-}
-
-.search-section input {
+.search-field {
+    flex: 1;
+    padding: 12px 15px;
     border: none;
     outline: none;
-    font-size: 15px;
-    width: 100%;
+    font-size: 14px;
+    color: #333;
+    background: #f8f9fa;
+    border-radius: 4px;
+    margin: 0 4px;
 }
 
-.search-btn {
+.search-field:focus {
+    background: #fff;
+    box-shadow: inset 0 0 0 2px #026cdf;
+}
+
+#search-btn {
     background-color: #026cdf;
     color: white;
     border: none;
-    height: 100%;
-    padding: 0 40px;
-    font-size: 16px;
-    font-weight: bold;
+    padding: 12px 35px;
     border-radius: 4px;
     cursor: pointer;
+    font-weight: bold;
+    font-size: 14px;
+    transition: background 0.2s;
 }
 
-.search-btn:hover {
-    background-color: #0255b3;
+#search-btn:hover {
+    background-color: #0151b0;
 }
 
-/* Main Content constraints */
+/* Hero Asymmetrical Event Grid Layout */
 .main-content {
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 20px;
+    padding: 40px 60px;
 }
-
-/* ========================================= */
-/* EVENT GRID SECTION                        */
-/* ========================================= */
 
 .tm-event-grid {
     display: grid;
-    /* This creates 3 columns: one large left column (2fr), and two smaller right columns (1fr each) */
-    grid-template-columns: 2fr 1fr 1fr;
-    /* This creates 2 rows, each 250px tall */
-    grid-template-rows: 250px 250px;
+    grid-template-columns: 2fr 1.2fr;
     gap: 20px;
-    margin-top: 30px;
+    max-width: 1400px;
+    margin: 0 auto;
 }
 
-/* Base style for all event cards */
+/* Base Event Card Style */
 .event-card {
     border-radius: 8px;
-    position: relative;
     overflow: hidden;
+    position: relative;
     cursor: pointer;
-    transition: transform 0.2s ease-in-out;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+    min-height: 220px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    padding: 25px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .event-card:hover {
-    transform: scale(1.02); /* Slight zoom on hover like real Ticketmaster */
+    transform: translateY(-4px);
+    box-shadow: 0 8px 25px rgba(0,2,208,0.3);
 }
 
-/* The Large Left Event */
+/* Big Featured Card on the Left */
 .event-card.featured {
-    /* Tell it to start in column 1 and end before column 2 */
-    grid-column: 1 / 2;
-    /* Tell it to start in row 1 and span down to row 3 */
-    grid-row: 1 / 3; 
-    /* Dark gradient placeholder simulating the stage image */
-    background: linear-gradient(to top, rgba(0,0,0,0.9) 10%, rgba(30,30,30,0.4)), #1a1a1a;
+    grid-row: span 2;
+    min-height: 460px;
 }
 
-/* Small Event Placeholders */
-.event-card.disney { background: linear-gradient(to top, rgba(0,0,0,0.9), transparent), #2a1b3d; }
-.event-card.bluey { background: linear-gradient(to top, rgba(0,0,0,0.9), transparent), #b35900; }
-.event-card.bottom-left { background: #333; }
-.event-card.bottom-right { background: #026cdf; }
-
-/* Text & Typography inside the cards */
-.event-info {
-    position: absolute;
-    bottom: 20px;
-    left: 20px;
-    right: 20px;
-    color: white;
-}
-
-.event-info h3 {
-    margin: 5px 0 0 0;
-    font-size: 20px;
-    font-weight: bold;
-}
-
-.mcr-title {
-    font-size: 38px;
-    margin: 0;
-    color: #4da8da; /* Mimics the blue MCR font in your screenshot */
-    font-weight: 900;
-}
-
-.event-info .category {
-    font-size: 11px;
-    font-weight: bold;
-    letter-spacing: 1px;
-    color: #ccc;
-}
-
-/* ========================================= */
-/* SEAT MAP & CHECKOUT SECTION               */
-/* ========================================= */
-.hidden { display: none !important; }
-
-.seat-map {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
-    gap: 15px;
-    margin-top: 20px;
-}
-
-.seat {
-    background-color: #2c2c2c;
-    border: 2px solid #444;
-    border-radius: 5px;
-    padding: 15px 0;
-    text-align: center;
-    cursor: pointer;
-    font-weight: bold;
-    transition: all 0.2s ease;
-    color: white;
-}
-
-.seat:hover {
-    background-color: #026cdf;
-    border-color: #026cdf;
-    transform: scale(1.05);
-}
-
-.checkout-panel {
-    margin-top: 40px;
-    background-color: #1e1e1e;
-    padding: 20px;
-    border-radius: 8px;
-    text-align: center;
-    border: 1px solid #333;
-}
-
-/* ========================================= */
-/* MY TICKETS & TRANSFER MODAL               */
-/* ========================================= */
-.ticket-card {
-    background: #1e1e1e;
-    padding: 25px;
-    border-radius: 8px;
-    border: 1px solid #333;
-    max-width: 350px;
-}
-
-.modal {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: 1000;
-}
-
-.modal-content {
-    background: white;
-    padding: 30px;
-    border-radius: 8px;
-    max-width: 400px;
-    width: 90%;
+.card-content {
     position: relative;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    z-index: 2;
 }
 
-.close-btn {
-    position: absolute;
-    top: 10px; right: 20px;
-    font-size: 28px;
-    font-weight: bold;
-    cursor: pointer;
-    color: #555;
+.event-card h3 {
+    font-size: 24px;
+    margin: 0 0 10px 0;
+    font-weight: 800;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.8);
 }
 
-.close-btn:hover { color: #000; }
-
-.modal-input {
-    width: 100%;
-    padding: 12px;
-    margin-top: 10px;
-    border: 1px solid #ccc;
-    border-radius: 4px;
-    box-sizing: border-box;
-    font-size: 16px;
+.event-card.featured h3 {
+    font-size: 38px;
 }
+
+.event-card p {
+    margin: 0;
+    font-size: 14px;
+    color: #e0e0e0;
+    font-weight: 500;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+/* Utility classes */
+.hidden { display: none !important; }

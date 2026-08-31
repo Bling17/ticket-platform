@@ -2,8 +2,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const eventGrid = document.getElementById('dynamic-event-grid');
     const ticketSection = document.getElementById('ticket-purchasing');
     const backBtn = document.getElementById('back-btn');
-    const navMyTickets = document.getElementById('nav-my-tickets');
-    const myTicketsSection = document.getElementById('my-tickets-section');
+    const searchBtn = document.getElementById('search-btn');
+    const searchInput = document.getElementById('search-input');
 
     // ==========================================
     // 1. Fetch Events and Build the UI
@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (eventGrid) eventGrid.innerHTML = ''; 
             
+            if (events.length === 0 && eventGrid) {
+                eventGrid.innerHTML = '<p style="color: white; text-align: center; width: 100%;">No events in database. Search above to pull live data!</p>';
+                return;
+            }
+
             events.forEach((event, index) => {
                 const card = document.createElement('div');
                 card.className = index === 0 ? 'event-card featured' : 'event-card'; 
@@ -32,12 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 card.addEventListener('click', () => {
                     if (eventGrid) eventGrid.classList.add('hidden');
-                    if (myTicketsSection) myTicketsSection.classList.add('hidden');
                     if (ticketSection) ticketSection.classList.remove('hidden');
                     
                     document.getElementById('venue-name').textContent = `${event.title} • ${event.venue}`;
-                    
-                    // Trigger our Dynamic Engine!
                     renderDynamicSeats(event.id); 
                 });
 
@@ -45,14 +47,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         } catch (error) {
             console.error('Error loading events:', error);
-            if (eventGrid) eventGrid.innerHTML = '<p style="color:red;">Failed to load events.</p>';
+            if (eventGrid) eventGrid.innerHTML = '<p style="color:red;">Failed to load events. Is your backend running?</p>';
         }
     }
 
-    loadEvents(); // Run the function immediately!
+    loadEvents(); // Load immediately on page open
 
     // ==========================================
-    // 2. Navigation Logic
+    // 2. Navigation
     // ==========================================
     if (backBtn) {
         backBtn.addEventListener('click', () => {
@@ -62,119 +64,48 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (navMyTickets) {
-        navMyTickets.addEventListener('click', () => {
-            if (eventGrid) eventGrid.classList.add('hidden');
-            if (ticketSection) ticketSection.classList.add('hidden');
-            if (myTicketsSection) myTicketsSection.classList.remove('hidden');
-        });
-    }
-
     // ==========================================
-    // 3. Transfer UI Logic
+    // 3. Dynamic Search Logic
     // ==========================================
-    const modal = document.getElementById('transfer-modal');
-    const closeBtn = document.querySelector('.close-btn');
-    const openTransferBtn = document.getElementById('open-transfer-btn');
-    const submitTransferBtn = document.getElementById('submit-transfer-btn');
-
-    if (openTransferBtn) {
-        openTransferBtn.addEventListener('click', () => {
-            modal.classList.remove('hidden');
-        });
-    }
-
-    if (closeBtn) {
-        closeBtn.addEventListener('click', () => {
-            modal.classList.add('hidden');
-            document.getElementById('transfer-message').textContent = ''; 
-        });
-    }
-
-    if (submitTransferBtn) {
-        submitTransferBtn.addEventListener('click', async () => {
-            const email = document.getElementById('friend-email').value;
-            const msg = document.getElementById('transfer-message');
-            
-            if (!email) {
-                msg.textContent = 'Please enter an email address.';
-                msg.style.color = '#f44336';
-                return;
-            }
-
-            msg.textContent = 'Generating secure link...';
-            msg.style.color = '#555';
-
-            try {
-                const response = await fetch('/api/tickets/transfer', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ticket_id: 1, owner_id: 'user_joshua_123', recipient_email: email })
-                });
-                
-                const data = await response.json();
-                
-                if (response.ok) {
-                    msg.textContent = '✅ Transfer initiated! Check your real inbox.';
-                    msg.style.color = '#4CAF50';
-                } else {
-                    msg.textContent = `❌ Error: ${data.error}`;
-                    msg.style.color = '#f44336';
-                }
-            } catch (error) {
-                msg.textContent = 'Failed to connect to server.';
-                msg.style.color = '#f44336';
-            }
-        });
-    }
-
-    // ==========================================
-    // 5. DYNAMIC SEARCH LOGIC
-    // ==========================================
-    const searchBtn = document.getElementById('search-btn');
-    const searchInput = document.getElementById('search-input');
-
     if (searchBtn && searchInput) {
         searchBtn.addEventListener('click', async () => {
             const keyword = searchInput.value.trim();
             if (!keyword) return alert('Please enter an artist or event name.');
 
-            // Show a loading state
             const originalText = searchBtn.textContent;
             searchBtn.textContent = 'Searching...';
-            eventGrid.innerHTML = '<p style="text-align: center; width: 100%; margin-top: 50px; font-weight: bold; color: white;">Fetching live data from Ticketmaster...</p>';
+            if (eventGrid) eventGrid.innerHTML = '<p style="color: white; text-align: center; width: 100%; margin-top: 50px;">Fetching live data from Ticketmaster...</p>';
 
             try {
-                // 1. Search Ticketmaster and update the database
+                // Fetch new events
                 const searchRes = await fetch(`/api/search?keyword=${encodeURIComponent(keyword)}`);
                 const searchData = await searchRes.json();
 
                 if (!searchRes.ok) {
                     alert(searchData.error || 'No events found.');
                     searchBtn.textContent = originalText;
-                    loadEvents(); // Reload old events if search fails
+                    loadEvents();
                     return;
                 }
 
-                // 2. Generate new interactive seats for these new events
+                // Build new seats for the new events
                 await fetch('/api/generate-seats');
 
-                // 3. Reload the UI grid with the brand new data!
+                // Reload the grid
                 await loadEvents();
             } catch (error) {
                 console.error('Search failed:', error);
-                alert('An error occurred while searching. Is your server running?');
+                alert('An error occurred. Make sure your server is running.');
             } finally {
                 searchBtn.textContent = originalText;
-                searchInput.value = ''; // Clear the search bar
+                searchInput.value = '';
             }
         });
     }
-
-}); // <--- Cleanly closes the DOMContentLoaded block!
+}); // End of DOMContentLoaded
 
 // ==========================================
-// 4. DYNAMIC SEAT MAP ENGINE
+// 4. Dynamic Seat Engine
 // ==========================================
 async function renderDynamicSeats(eventId) {
     const seatMap = document.getElementById('seat-map');
@@ -206,13 +137,90 @@ async function renderDynamicSeats(eventId) {
                 seatEl.style.color = 'white';
                 seatEl.style.cursor = 'pointer';
 
-                seatEl.addEventListener('click', () => {
-                    if (seatEl.style.backgroundColor === 'rgb(76, 175, 80)' || seatEl.style.backgroundColor === '#4CAF50') {
-                        seatEl.style.backgroundColor = '#026cdf'; 
-                    } else {
-                        seatEl.style.backgroundColor = '#4CAF50'; 
+                seatEl.addEventListener('click', async () => {
+                const storedUser = localStorage.getItem('currentUser');
+                if (!storedUser) {
+                    alert('Please sign in first to purchase tickets!');
+                    return;
+                }
+                const user = JSON.parse(storedUser);
+
+                // 1. Request Redis Lock
+                try {
+                    const lockRes = await fetch('/api/seats/lock', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ seat_id: seat.id, user_id: user.email })
+                    });
+                    const lockData = await lockRes.json();
+
+                    if (!lockRes.ok) {
+                        alert(lockData.error);
+                        return;
                     }
-                });
+
+                    // 2. Open Checkout Modal
+                    const checkoutModal = document.getElementById('checkout-modal');
+                    checkoutModal.style.display = 'flex';
+                    checkoutModal.classList.remove('hidden');
+                    document.getElementById('checkout-seat-details').textContent = `Seat: ${seat.section} • ${seat.row} - Seat ${seat.seat_number}`;
+
+                    // Handle Confirm Payment
+                    const confirmBtn = document.getElementById('confirm-pay-btn');
+                    const newConfirmBtn = confirmBtn.cloneNode(true);
+                    confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+
+                    newConfirmBtn.addEventListener('click', async () => {
+                            const msg = document.getElementById('checkout-message');
+                            msg.textContent = 'Processing secure payment...';
+                            msg.style.color = '#999';
+
+                            // Grab the current event title safely from the DOM
+                            const currentEventTitle = document.getElementById('venue-name')?.textContent.split('•')[0].trim() || 'Live Concert';
+
+                            try {
+                                const payRes = await fetch('/api/checkout', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        seat_id: seat.id,
+                                        user_email: user.email,
+                                        price: 150000,
+                                        event_name: currentEventTitle
+                                    })
+                                });
+
+                                const payData = await payRes.json();
+                                if (payRes.ok) {
+                                    msg.textContent = '✅ Payment successful!';
+                                    msg.style.color = '#4CAF50';
+                                    setTimeout(() => {
+                                        checkoutModal.style.display = 'none';
+                                        checkoutModal.classList.add('hidden');
+                                        renderDynamicSeats(eventId);
+                                    }, 1500);
+                                } else {
+                                    msg.textContent = `❌ ${payData.error || 'Payment failed'}`;
+                                    msg.style.color = '#f44336';
+                                }
+                            } catch (fetchErr) {
+                                console.error('Fetch error:', fetchErr);
+                                msg.textContent = '❌ Network error.';
+                                msg.style.color = '#f44336';
+                            }
+                        });
+
+                    // Handle Cancel
+                    document.getElementById('checkout-cancel-btn').onclick = () => {
+                        checkoutModal.style.display = 'none';
+                        checkoutModal.classList.add('hidden');
+                    };
+
+                } catch (err) {
+                    console.error('Lock error:', err);
+                    alert('Could not connect to server for seat locking.');
+                }
+            });
             } else {
                 seatEl.style.backgroundColor = '#333'; 
                 seatEl.style.color = '#777';
@@ -227,3 +235,253 @@ async function renderDynamicSeats(eventId) {
         seatMap.innerHTML = '<p style="color:red;">Failed to load seat map.</p>';
     }
 }
+
+// ==========================================
+// 5. TRANSFER & WALLET LOGIC
+// ==========================================
+const navMyTicketsBtn = document.getElementById('nav-my-tickets');
+const walletSection = document.getElementById('my-tickets-section');
+const mainGrid = document.getElementById('dynamic-event-grid');
+const transferModal = document.getElementById('transfer-modal');
+
+// Open the Wallet
+
+
+
+// Open / Close the Modal
+document.getElementById('open-transfer-btn')?.addEventListener('click', () => {
+    transferModal.style.display = 'flex';
+    transferModal.classList.remove('hidden');
+});
+document.getElementById('close-modal-btn')?.addEventListener('click', () => {
+    transferModal.style.display = 'none';
+    transferModal.classList.add('hidden');
+    document.getElementById('transfer-message').textContent = '';
+});
+
+// Actually Send the Email
+document.getElementById('submit-transfer-btn')?.addEventListener('click', async () => {
+    const email = document.getElementById('friend-email').value;
+    const senderName = document.getElementById('transfer-sender-name').value || 'Rowland Joshua'; // Fallback to your name!
+    const eventName = document.getElementById('transfer-event-name').value || 'Live Event';
+    const seatInfo = document.getElementById('transfer-seat-info').value || 'General Admission';
+    const msg = document.getElementById('transfer-message');
+    
+    if (!email) {
+        msg.textContent = 'Please enter an email!';
+        msg.style.color = '#f44336';
+        return;
+    }
+
+    msg.textContent = 'Generating secure link and sending email...';
+    msg.style.color = '#999';
+
+    try {
+        const response = await fetch('/api/tickets/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                ticket_id: 1, 
+                owner_id: senderName, // Passing your typed name here!
+                recipient_email: email,
+                event_name: eventName,
+                seat_info: seatInfo
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            msg.textContent = '✅ Success! Email sent.';
+            msg.style.color = '#4CAF50';
+        } else {
+            msg.textContent = `❌ ${data.error}`;
+            msg.style.color = '#f44336';
+        }
+    } catch (error) {
+        msg.textContent = 'Server connection failed.';
+        msg.style.color = '#f44336';
+    }
+});
+
+// ==========================================
+// 6. AUTHENTICATION & LOGIN UI LOGIC
+// ==========================================
+const authModal = document.getElementById('auth-modal');
+const navSigninBtn = document.getElementById('nav-signin-btn');
+const authCloseBtn = document.getElementById('auth-close-btn');
+const authSwitchMode = document.getElementById('auth-switch-mode');
+const authTitle = document.getElementById('auth-title');
+const authNameInput = document.getElementById('auth-name');
+const authSubmitBtn = document.getElementById('auth-submit-btn');
+const authMessage = document.getElementById('auth-message');
+
+let isRegistering = false; // Default mode is Sign In
+
+// Open Modal
+if (navSigninBtn) {
+    navSigninBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        authModal.style.display = 'flex';
+        authModal.classList.remove('hidden');
+    });
+}
+
+// Close Modal
+if (authCloseBtn) {
+    authCloseBtn.addEventListener('click', () => {
+        authModal.style.display = 'none';
+        authModal.classList.add('hidden');
+        authMessage.textContent = '';
+    });
+}
+
+// Switch between Login and Register mode
+if (authSwitchMode) {
+    authSwitchMode.addEventListener('click', () => {
+        isRegistering = !isRegistering;
+        if (isRegistering) {
+            authTitle.textContent = 'Create an Account';
+            authNameInput.classList.remove('hidden');
+            authSubmitBtn.textContent = 'Register';
+            authSwitchMode.textContent = 'Sign In';
+            authSwitchMode.previousElementSibling.textContent = 'Already have an account? ';
+        } else {
+            authTitle.textContent = 'Sign In to MyuzeTix';
+            authNameInput.classList.add('hidden');
+            authSubmitBtn.textContent = 'Sign In';
+            authSwitchMode.textContent = 'Register';
+            authSwitchMode.previousElementSibling.textContent = "Don't have an account? ";
+        }
+        authMessage.textContent = '';
+    });
+}
+
+// Submit Login or Registration
+if (authSubmitBtn) {
+    authSubmitBtn.addEventListener('click', async () => {
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value.trim();
+        const name = authNameInput.value.trim();
+
+        if (!email || !password || (isRegistering && !name)) {
+            authMessage.textContent = 'Please fill in all fields.';
+            authMessage.style.color = '#f44336';
+            return;
+        }
+
+        authMessage.textContent = 'Processing...';
+        authMessage.style.color = '#999';
+
+        const endpoint = isRegistering ? '/api/auth/register' : '/api/auth/login';
+        const payload = isRegistering ? { name, email, password } : { email, password };
+
+        try {
+            const res = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                authMessage.textContent = `✅ ${data.message}`;
+                authMessage.style.color = '#4CAF50';
+
+                // Save user session in browser local storage
+                localStorage.setItem('currentUser', JSON.stringify(data.user));
+
+                setTimeout(() => {
+                    authModal.style.display = 'none';
+                    authModal.classList.add('hidden');
+                    window.location.reload(); // Refresh to reflect logged-in state
+                }, 1000);
+            } else {
+                authMessage.textContent = `❌ ${data.error}`;
+                authMessage.style.color = '#f44336';
+            }
+        } catch (err) {
+            console.error('Auth error:', err);
+            authMessage.textContent = 'Server connection failed.';
+            authMessage.style.color = '#f44336';
+        }
+    });
+}
+
+// ==========================================
+// 7. NAVBAR USER STATE DISPLAY
+// ==========================================
+function checkUserSession() {
+    const navLinksContainer = document.getElementById('nav-links-container');
+    const storedUser = localStorage.getItem('currentUser');
+
+    if (storedUser && navLinksContainer) {
+        const user = JSON.parse(storedUser);
+
+        // Replace the sign-in button with a welcome message and logout button
+        navLinksContainer.innerHTML = `
+            <a href="#" id="nav-my-tickets">My Tickets</a>
+            <span style="color: white; font-weight: 600; font-size: 14px;">Hi, ${user.name}</span>
+            <a href="#" id="nav-logout-btn" style="color: #f44336; font-weight: bold;">Logout</a>
+        `;
+
+        // Re-attach listener for My Tickets to FETCH from PostgreSQL
+        document.getElementById('nav-my-tickets')?.addEventListener('click', async () => {
+            document.getElementById('dynamic-event-grid')?.classList.add('hidden');
+            document.getElementById('ticket-purchasing')?.classList.add('hidden');
+            
+            const walletSection = document.getElementById('my-tickets-section');
+            walletSection.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`/api/user/tickets?email=${encodeURIComponent(user.email)}`);
+                const tickets = await res.json();
+                
+                // 1. ADD THE BACK BUTTON DIRECTLY INTO THE WALLET HTML
+                let ticketsHtml = `
+                    <button id="wallet-back-btn" style="background: #333; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-bottom: 20px; font-weight: bold;">← Back to Events</button>
+                    <h2 style="color:white; margin-bottom: 20px;">My Digital Wallet</h2>
+                `;
+                
+                if (!Array.isArray(tickets) || tickets.length === 0) {
+                    ticketsHtml += '<p style="color: #aaa; margin-top: 20px;">You do not own any tickets yet. Complete a checkout first!</p>';
+                } else {
+                    ticketsHtml += '<div style="display: flex; flex-wrap: wrap; gap: 20px;">';
+                    tickets.forEach(ticket => {
+                        ticketsHtml += `
+                            <div style="background-color: #1a1a1f; padding: 25px; border-radius: 8px; border-left: 5px solid #026cdf; width: 320px; display: inline-block; box-shadow: 0 4px 15px rgba(0,0,0,0.3); color: white;">
+                                <h3 style="margin-top: 0; color: white; font-size: 18px;">${ticket.event_name || 'Verified Ticket'}</h3>
+                                <p style="color: #999; margin: 8px 0; font-size: 14px;">Ticket ID: #${ticket.id} • Status: <span style="color: #4CAF50; font-weight: bold;">${ticket.status}</span></p>
+                                <p style="color: #ccc; margin: 8px 0; font-size: 14px;">Price Paid: ₦${Number(ticket.price || 150000).toLocaleString()}</p>
+                                <button onclick="openTransferModal(${ticket.id})" style="background-color: #026cdf; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-weight: bold; margin-top: 15px; font-size: 13px;">Transfer to Friend</button>
+                            </div>
+                        `;
+                    });
+                    ticketsHtml += '</div>';
+                }
+                walletSection.innerHTML = ticketsHtml;
+
+                // 2. ATTACH THE CLICK LISTENER IMMEDIATELY AFTER ADDING THE BUTTON TO HTML
+                document.getElementById('wallet-back-btn')?.addEventListener('click', () => {
+                    walletSection.classList.add('hidden');
+                    document.getElementById('dynamic-event-grid')?.classList.remove('hidden');
+                });
+
+            } catch (err) {
+                console.error('Wallet error:', err);
+                walletSection.innerHTML = '<h2 style="color:white;">My Digital Wallet</h2><p style="color:#f44336;">Failed to load your tickets.</p>';
+            }
+        });
+
+        // Logout functionality
+        document.getElementById('nav-logout-btn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            localStorage.removeItem('currentUser');
+            window.location.reload(); // Reset page back to guest state
+        });
+    }
+}
+
+// Run this check immediately when the page loads
+checkUserSession();

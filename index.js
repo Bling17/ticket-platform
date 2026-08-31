@@ -17,172 +17,99 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Initialize the Express app
 const app = express();
 app.use(cors());
-app.use(express.json()); // Allows us to read JSON data sent in requests
+app.use(express.json());
 app.use(express.static('public'));
 
-// 1. Connect to PostgreSQL
+// ==========================================
+// POSTGRESQL & REDIS CONNECTIONS
+// ==========================================
 const pgPool = new Pool({
     user: process.env.DB_USER || 'postgres',
     host: process.env.DB_HOST || 'localhost',
     database: process.env.DB_NAME || 'postgres',
-    password: process.env.DB_PASSWORD,
+    password: process.env.DB_PASSWORD || '',
     port: Number(process.env.DB_PORT || 5432),
 });
 
 pgPool.on('connect', () => {
-    console.log('Connected to PostgreSQL Database');
+    console.log('✅ Connected to PostgreSQL Database');
 });
 
-// 2. Connect to Redis
 const redisClient = redis.createClient({
     url: process.env.REDIS_URL || 'redis://localhost:6379'
 });
 
 redisClient.on('error', (err) => console.log('Redis Error:', err));
 
-// 3. Create a Health Check Route
-app.get('/api/health', async (req, res) => {
+// ==========================================
+// TICKETMASTER SEARCH & LIVE FETCH
+// ==========================================
+app.get('/api/search', async (req, res) => {
     try {
-        // Test Postgres
-        const dbResult = await pgPool.query('SELECT NOW()');
-        
-        // Test Redis
-        await redisClient.set('test_key', 'Redis is working!');
-        const redisResult = await redisClient.get('test_key');
+        const keyword = req.query.keyword;
+        if (!keyword) return res.status(400).json({ error: 'Please provide a search term.' });
 
-        res.json({
-            status: 'success',
-            message: 'Backend is fully operational',
-            db_time: dbResult.rows[0].now,
-            redis_status: redisResult
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Connection failed' });
-    }
-});
+        const apiKey = process.env.TICKETMASTER_API_KEY;
+        if (!apiKey) return res.status(500).json({ error: 'Missing API Key in .env file' });
 
-// ==========================================
-// TICKETING API ROUTES
-// ==========================================
+        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
 
-// --- VENUES ---
+        const response = await fetch(url);
+        const data = await response.json();
 
-// Create a new venue
-app.post('/api/venues', async (req, res) => {
-    try {
-        const { name, city, capacity } = req.body;
-        const newVenue = await pgPool.query(
-            'INSERT INTO venues (name, city, capacity) VALUES ($1, $2, $3) RETURNING *',
-            [name, city, capacity]
-        );
-        res.json(newVenue.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
+        if (!response.ok || !data._embedded || !data._embedded.events) {
+            return res.status(404).json({ error: 'No live events found for this search.' });
+        }
 
-// Get all venues
-app.get('/api/venues', async (req, res) => {
-    try {
-        const allVenues = await pgPool.query('SELECT * FROM venues');
-        res.json(allVenues.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// ==========================================
-// TEMPORARY ROUTE: Upgrade Database for Transfers
-// ==========================================
-app.get('/api/upgrade-db', async (req, res) => {
-    try {
-        await pgPool.query(`
-            ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_user_id_fkey;
-            ALTER TABLE tickets ALTER COLUMN user_id TYPE VARCHAR(255);
-            
-            ALTER TABLE tickets 
-            ADD COLUMN IF NOT EXISTS transfer_token VARCHAR(255), 
-            ADD COLUMN IF NOT EXISTS transfer_recipient_email VARCHAR(255), 
-            ADD COLUMN IF NOT EXISTS transfer_status VARCHAR(50) DEFAULT 'none';
-        `);
-        res.send('✅ Database upgraded for transfers!');
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-// ==========================================
-// TEMPORARY ROUTE: Give myself a ticket
-// ==========================================
-app.get('/api/seed-ticket', async (req, res) => {
-    try {
-        // This forces ticket #1 to exist with a price!
-        await pgPool.query(`
-            INSERT INTO tickets (id, user_id, status, price) 
-            VALUES (1, 'user_joshua_123', 'owned', 150000)
-            ON CONFLICT (id) 
-            DO UPDATE SET user_id = 'user_joshua_123', status = 'owned', price = 150000;
-        `);
-        res.send('🎟️ Ticket #1 successfully added to your wallet!');
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ==========================================
-// TEMPORARY ROUTE: Seed Dynamic Events
-// ==========================================
-app.get('/api/seed-events', async (req, res) => {
-    try {
-        // 1. Ensure the events table has ALL the required columns
-        await pgPool.query(`
-            CREATE TABLE IF NOT EXISTS events (
-                id SERIAL PRIMARY KEY
-            );
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS title VARCHAR(255);
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS date VARCHAR(255);
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS venue VARCHAR(255);
-            ALTER TABLE events ADD COLUMN IF NOT EXISTS image_url TEXT;
-            
-            -- NEW: Delete the old, strict start_time column
-            ALTER TABLE events DROP COLUMN IF EXISTS start_time;
-        `);
-
-        // 2. Drop the strict linking rule so we can safely refresh the events
+        // Drop constraints and delete SEATS BEFORE EVENTS
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
-
-        // 3. Clear old test data and insert 3 dynamic events
+        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
+        await pgPool.query(`DELETE FROM seats;`);
         await pgPool.query(`DELETE FROM events;`);
-        await pgPool.query(`
-            INSERT INTO events (title, date, venue, image_url) VALUES 
-            ('My Chemical Romance', 'Oct 25 • 7:00 PM', 'Eko Convention Centre', 'https://images.unsplash.com/photo-1540039155733-d7696d4eb98b?q=80&w=800&auto=format&fit=crop'),
-            ('Lagos Tech Summit', 'Nov 12 • 9:00 AM', 'Landmark Centre', 'https://images.unsplash.com/photo-1505373877841-8d25f7d46678?q=80&w=800&auto=format&fit=crop'),
-            ('Burna Boy Live', 'Dec 20 • 8:00 PM', 'Eko Atlantic City', 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=800&auto=format&fit=crop');
-        `);
-        
-        res.send('🖼️ Events table seeded with dynamic images!');
+
+        const liveEvents = data._embedded.events;
+        let insertedCount = 0;
+
+        for (let event of liveEvents) {
+            const title = event.name;
+            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
+            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
+            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
+
+            await pgPool.query(`
+                INSERT INTO events (title, date, venue, image_url)
+                VALUES ($1, $2, $3, $4)
+            `, [title, date, venue, image_url]);
+            
+            insertedCount++;
+        }
+
+        res.json({ message: 'Success', count: insertedCount });
+    } catch (err) {
+        console.error('Search Error:', err);
+        res.status(500).json({ error: 'Server error while fetching from Ticketmaster.' });
+    }
+});
+
+// ==========================================
+// EVENTS & SEATS ROUTES
+// ==========================================
+app.get('/api/events', async (req, res) => {
+    try {
+        const { rows } = await pgPool.query('SELECT * FROM events ORDER BY id ASC');
+        res.json(rows);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-// ==========================================
-// SEAT ENGINE: Generate Dynamic Seats
-// ==========================================
 app.get('/api/generate-seats', async (req, res) => {
     try {
-        // Drop any strict linking rules that might block us
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
-
-        // 1. Destroy the old outdated table, then build the new correct one
         await pgPool.query(`
             DROP TABLE IF EXISTS seats CASCADE;
-            
             CREATE TABLE seats (
                 id SERIAL PRIMARY KEY,
                 event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
@@ -194,10 +121,8 @@ app.get('/api/generate-seats', async (req, res) => {
             );
         `);
 
-        // 2. Fetch all events currently in the database
         const { rows: events } = await pgPool.query('SELECT id FROM events');
         
-        // 3. Generate a VIP seating section (3 rows, 5 seats each) for EVERY event
         let insertCount = 0;
         for (let event of events) {
             for (let r = 1; r <= 3; r++) {
@@ -210,14 +135,12 @@ app.get('/api/generate-seats', async (req, res) => {
                 }
             }
         }
-        res.send(`💺 Success! Generated ${insertCount} interactive seats across your events.`);
+        res.send(`💺 Generated ${insertCount} interactive seats!`);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
-// ==========================================
-// SEAT ENGINE: Fetch Seats for a Specific Event
-// ==========================================
+
 app.get('/api/events/:eventId/seats', async (req, res) => {
     try {
         const { rows } = await pgPool.query(
@@ -230,419 +153,101 @@ app.get('/api/events/:eventId/seats', async (req, res) => {
     }
 });
 // ==========================================
-// FETCH EVENTS ROUTE
-// ==========================================
-app.get('/api/events', async (req, res) => {
-    try {
-        const { rows } = await pgPool.query('SELECT * FROM events ORDER BY id ASC');
-        res.json(rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// --- EVENTS ---
-
-// Create a new event
-app.post('/api/events', async (req, res) => {
-    try {
-        const { venue_id, title, start_time } = req.body;
-        const newEvent = await pgPool.query(
-            'INSERT INTO events (venue_id, title, start_time) VALUES ($1, $2, $3) RETURNING *',
-            [venue_id, title, start_time]
-        );
-        res.json(newEvent.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// Get all events
-app.get('/api/events', async (req, res) => {
-    try {
-        const allEvents = await pgPool.query('SELECT * FROM events');
-        res.json(allEvents.rows);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// ==========================================
-// TICKETMASTER API: Fetch Live Concerts!
-// ==========================================
-app.get('/api/fetch-live', async (req, res) => {
-    try {
-        const apiKey = process.env.TICKETMASTER_API_KEY;
-        if (!apiKey) return res.status(500).send('Ticketmaster API key is not configured.');
-
-        // Let's search for Stray Kids! (You can change this to 'BTS' or 'K-Pop' later)
-        const keyword = 'Stray Kids';
-        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        // Check if Ticketmaster found anything
-        if (!data._embedded || !data._embedded.events) {
-            return res.status(404).send('No live events found for this artist right now.');
-        }
-
-        const liveEvents = data._embedded.events;
-
-        // Drop strict constraints and clear the old hardcoded events
-        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
-        await pgPool.query(`DELETE FROM events;`);
-
-        // Loop through the live Ticketmaster data and save it to PostgreSQL
-        let insertedCount = 0;
-        for (let event of liveEvents) {
-            const title = event.name;
-            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
-            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
-
-            // Find a high-quality 16:9 ratio image from their promo materials
-            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
-
-            await pgPool.query(`
-                INSERT INTO events (title, date, venue, image_url)
-                VALUES ($1, $2, $3, $4)
-            `, [title, date, venue, image_url]);
-
-            insertedCount++;
-        }
-
-        res.send(`🔥 Success! ${insertedCount} live Ticketmaster events for ${keyword} have been loaded into your database!`);
-    } catch (err) {
-        console.error('API Error:', err);
-        res.status(500).send('Server error while fetching from Ticketmaster.');
-    }
-});
-
-// ==========================================
-// DYNAMIC SEARCH: Fetch specific events from Ticketmaster
-// ==========================================
-app.get('/api/search', async (req, res) => {
-    try {
-        const keyword = req.query.keyword;
-        if (!keyword) return res.status(400).json({ error: 'Please provide a search term.' });
-
-        const apiKey = process.env.TICKETMASTER_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Ticketmaster API key is not configured.' });
-        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
-
-        const response = await fetch(url);
-        const data = await response.json();
-
-        if (!data._embedded || !data._embedded.events) {
-            return res.status(404).json({ error: 'No live events found for this search.' });
-        }
-
-        // 1. Drop strict constraints and clear old events/seats
-        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
-        await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
-        await pgPool.query(`DELETE FROM events;`);
-        await pgPool.query(`DELETE FROM seats;`);
-
-        const liveEvents = data._embedded.events;
-        let insertedCount = 0;
-
-        // 2. Loop through the live Ticketmaster data and save it
-        for (let event of liveEvents) {
-            const title = event.name;
-            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
-            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
-            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
-
-            await pgPool.query(`
-                INSERT INTO events (title, date, venue, image_url)
-                VALUES ($1, $2, $3, $4)
-            `, [title, date, venue, image_url]);
-
-            insertedCount++;
-        }
-
-        res.json({ message: 'Success', count: insertedCount });
-    } catch (err) {
-        console.error('Search Error:', err);
-        res.status(500).json({ error: 'Server error while fetching from Ticketmaster.' });
-    }
-});
-// --- SEATS ---
-
-// Create a physical seat in a venue
-app.post('/api/seats', async (req, res) => {
-    try {
-        const { venue_id, section, seat_row, seat_number } = req.body;
-        const newSeat = await pgPool.query(
-            'INSERT INTO seats (venue_id, section, seat_row, seat_number) VALUES ($1, $2, $3, $4) RETURNING *',
-            [venue_id, section, seat_row, seat_number]
-        );
-        res.json(newSeat.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// --- TICKETS (The Inventory) ---
-
-// Create a ticket to link an event to a seat
-app.post('/api/tickets', async (req, res) => {
-    try {
-        const { event_id, seat_id, price } = req.body;
-        const newTicket = await pgPool.query(
-            'INSERT INTO tickets (event_id, seat_id, price) VALUES ($1, $2, $3) RETURNING *',
-            [event_id, seat_id, price]
-        );
-        res.json(newTicket.rows[0]);
-    } catch (err) {
-        console.error(err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// ==========================================
-// REDIS LOCKING (The Checkout Timer)
+// TICKET TRANSFER ENGINE (Email & Database)
 // ==========================================
 
-// Lock a ticket for a user (Temporary Reservation)
-app.post('/api/tickets/lock', async (req, res) => {
+// 1. Setup Tickets Table & Mint a Test Ticket
+app.get('/api/setup-tickets', async (req, res) => {
     try {
-        const { ticket_id, user_id } = req.body;
-        const lockKey = `ticket_lock:${ticket_id}`;
-
-        // Attempt to lock the seat in Redis for 10 minutes (600 seconds)
-        // NX: "Not Exists" - only lock it if someone else hasn't already!
-        // EX: "Expiration" - auto-delete the lock after 600 seconds.
-        const locked = await redisClient.set(lockKey, user_id, {
-            NX: true,
-            EX: 600
-        });
-
-        if (!locked) {
-            return res.status(409).json({ 
-                error: 'Seat is currently reserved by another user. Please try again later.' 
-            });
-        }
-
-        res.json({
-            status: 'success',
-            message: 'Ticket temporarily reserved for 10 minutes.',
-            ticket_id,
-            user_id
-        });
-    } catch (err) {
-        console.error('Redis Lock Error:', err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// ==========================================
-// CHECKOUT (The Final Purchase)
-// ==========================================
-
-// Buy the locked ticket
-app.post('/api/tickets/buy', async (req, res) => {
-    try {
-        const { ticket_id, user_id } = req.body;
-        const lockKey = `ticket_lock:${ticket_id}`;
-
-        // 1. Verify this exact user holds the Redis lock
-        const currentLockOwner = await redisClient.get(lockKey);
-
-        if (currentLockOwner !== user_id) {
-            return res.status(400).json({ 
-                error: 'Checkout failed. Your reservation expired or you do not have this ticket reserved.' 
-            });
-        }
-
-        // 2. (Pretend a Stripe credit card payment is processed here)
-
-        // 3. Delete the lock from Redis so it doesn't stay reserved forever
-        await redisClient.del(lockKey);
-
-        // 4. Send the success response!
-        res.json({
-            status: 'success',
-            message: 'Payment successful! Ticket has been officially purchased.',
-            ticket_id: ticket_id,
-            owner: user_id
-        });
-    } catch (err) {
-        console.error('Checkout Error:', err.message);
-        res.status(500).json({ error: 'Server error' });
-    }
-});
-
-// 4. Start the Server after Redis is ready
-const PORT = 5000;
-
-async function startServer() {
-    try {
-        await redisClient.connect();
-        app.listen(PORT, () => {
-            console.log(`Server is running on http://localhost:${PORT}`);
-        });
-    } catch (err) {
-        console.error('Unable to connect to Redis:', err.message);
-        process.exitCode = 1;
-    }
-}
-
-startServer();
-// ==========================================
-// DYNAMIC SEATS: Seed realistic seats
-// ==========================================
-app.get('/api/seed-seats', async (req, res) => {
-    try {
-        // Creates a VIP row (A) and a Regular row (B)
         await pgPool.query(`
-            INSERT INTO seats (id, venue_id, seat_row, seat_number, price) VALUES 
-            (101, 1, 'A', 1, 150000), (102, 1, 'A', 2, 150000), (103, 1, 'A', 3, 150000), (104, 1, 'A', 4, 150000),
-            (105, 1, 'B', 1, 75000), (106, 1, 'B', 2, 75000), (107, 1, 'B', 3, 75000), (108, 1, 'B', 4, 75000)
-            ON CONFLICT (id) DO NOTHING;
+            CREATE TABLE IF NOT EXISTS tickets (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255),
+                price INTEGER DEFAULT 150000,
+                status VARCHAR(50) DEFAULT 'owned',
+                transfer_token VARCHAR(255),
+                transfer_recipient_email VARCHAR(255),
+                transfer_status VARCHAR(50) DEFAULT 'none'
+            );
+            
+            INSERT INTO tickets (id, user_id, price, status) 
+            VALUES (1, 'user_joshua_123', 150000, 'owned')
+            ON CONFLICT (id) DO UPDATE 
+            SET user_id = 'user_joshua_123', price = 150000, status = 'owned', transfer_status = 'none', transfer_token = NULL;
         `);
-        res.send('🪑 Dynamic seats successfully planted in the database!');
+        res.send('🎟️ Tickets table created and Test Ticket #1 minted!');
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).send(err.message);
     }
 });
 
-// ==========================================
-// DYNAMIC SEATS: Fetch seats for the frontend
-// ==========================================
-app.get('/api/seats', async (req, res) => {
-    try {
-        // Grab all seats and sort them neatly by Row and Number
-        const result = await pgPool.query('SELECT * FROM seats ORDER BY seat_row, seat_number');
-        res.json(result.rows);
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// ==========================================
-// TICKET TRANSFER: Initiate the Transfer (REAL EMAIL)
-// ==========================================
+// 2. Transfer Route (Sends the Real Email)
 app.post('/api/tickets/transfer', async (req, res) => {
     try {
-        const { ticket_id, owner_id, recipient_email } = req.body;
-        const transferToken = crypto.randomBytes(20).toString('hex');
+        // NEW: We receive the custom event_name and seat_info from the frontend
+        const { ticket_id, owner_id, recipient_email, event_name, seat_info } = req.body;
+        const transferToken = crypto.randomBytes(20).toString('hex'); 
 
-        const updateQuery = `
+        const result = await pgPool.query(`
             UPDATE tickets 
             SET transfer_token = $1, transfer_recipient_email = $2, transfer_status = 'pending' 
-            WHERE id = $3 AND user_id = $4
-            RETURNING *;
-        `;
-        const result = await pgPool.query(updateQuery, [transferToken, recipient_email, ticket_id, owner_id]);
+            WHERE id = $3 RETURNING *;
+        `, [transferToken, recipient_email, ticket_id]);
 
-        if (result.rows.length === 0) {
-            return res.status(400).json({ error: 'Ticket not found or you do not own it.' });
-        }
+        if (result.rows.length === 0) return res.status(400).json({ error: 'Ticket not found.' });
 
         const acceptLink = `http://localhost:5000/api/tickets/accept?token=${transferToken}`;
 
-        // The HTML Template perfectly mimicking the dark-mode aesthetic
-        const emailHTML = `
-            <div style="background-color: #1a1a1f; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; padding: 0; margin: 0; width: 100%; max-width: 600px; margin: auto;">
-                <div style="padding: 30px;">
-                    <h2 style="color: #026cdf; font-style: italic; font-weight: 800; margin-bottom: 40px; font-size: 20px;">ticketmaster</h2>
-                    
-                    <h1 style="font-size: 22px; text-align: center; font-weight: 500; margin-bottom: 40px; color: #ffffff;">
-                        ${owner_id} has transferred you 1 ticket to<br>BTS WORLD TOUR 'ARIRANG' IN ARLINGTON
-                    </h1>
-                    
-                    <p style="font-size: 15px; color: #dddddd;">Hi there,</p>
-                    <p style="font-size: 15px; color: #dddddd; line-height: 1.5; margin-bottom: 30px;">
-                        There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.
-                    </p>
-                    
-                    <!-- Dynamic Event Image -->
-                    <img src="https://images.unsplash.com/photo-1540039155733-d7696d4eb98b?q=80&w=600&auto=format&fit=crop" alt="Concert Stage" style="width: 100%; border-top-left-radius: 10px; border-top-right-radius: 10px; display: block;">
-                    
-                    <!-- Details Card -->
-                    <div style="background-color: #242429; padding: 25px; border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; margin-bottom: 30px;">
-                        <p style="margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: #ffffff;">BTS WORLD TOUR 'ARIRANG' IN ARLINGTON</p>
-                        <p style="margin: 0 0 20px 0; font-size: 14px; color: #999999;">Sun, Aug 16, 2026, 8:00 PM • AT&T Stadium</p>
-                        
-                        <p style="margin: 0 0 5px 0; font-size: 16px; font-weight: bold; color: #ffffff;">Section 5, Row 4, Seat 5</p>
-                        <p style="margin: 0 0 25px 0; font-size: 14px; color: #999999;">Transfer Pending</p>
-                        
-                        <!-- Accept Button -->
-                        <div style="text-align: center; margin-bottom: 25px;">
-                            <a href="${acceptLink}" style="background-color: #9193f4; color: #000000; padding: 16px 0; width: 100%; display: inline-block; text-decoration: none; font-weight: bold; font-size: 15px; border-radius: 4px; letter-spacing: 1px;">ACCEPT TICKETS</a>
-                        </div>
-                        
-                        <p style="font-size: 12px; color: #888888; line-height: 1.5;">
-                            By clicking 'ACCEPT TICKETS', you agree to our Terms of Use and any applicable ticket back terms.<br><br>
-                            If the ticket(s) were obtained fraudulently by the person transferring them, they may be canceled at any time and removed from your account.<br><br>
-                            This email is <strong>NOT</strong> your ticket.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        `;
-
-        // Configure the Email Payload
         const mailOptions = {
-            from: '"Ticketmaster Update" <rowlandjosh17@gmail.com>',
+            from: '"MyuzeTix Platform" <' + process.env.EMAIL_USER + '>',
             to: recipient_email,
-            subject: 'You received 1 ticket to BTS WORLD TOUR \'ARIRANG\' IN ARLINGTON',
-            html: emailHTML
+            subject: `🎟️ ${owner_id} sent you a ticket to ${event_name}!`,
+            html: `
+                <div style="background: #121212; color: white; padding: 40px; font-family: sans-serif; text-align: center; border-radius: 8px;">
+                    <h2 style="color: #026cdf; margin-bottom: 30px;">${owner_id} has transferred a ticket to you!</h2>
+                    
+                    <div style="background: #1a1a1f; padding: 25px; border-radius: 8px; margin-bottom: 30px; border-left: 4px solid #4CAF50; text-align: left; display: inline-block; min-width: 300px;">
+                        <h3 style="margin-top: 0; color: white;">${event_name}</h3>
+                        <p style="color: #ccc; font-size: 16px; margin-bottom: 5px;"><strong>Seat Info:</strong> ${seat_info}</p>
+                        <p style="color: #ccc; font-size: 14px; margin-bottom: 0;"><strong>Sender:</strong> ${owner_id}</p>
+                    </div>
+
+                    <br>
+                    <p style="color: #999;">Click the button below to accept it into your wallet.</p>
+                    <a href="${acceptLink}" style="display: inline-block; background: #026cdf; color: white; padding: 15px 30px; text-decoration: none; font-weight: bold; border-radius: 4px; margin-top: 15px;">ACCEPT TICKET</a>
+                </div>
+            `
         };
 
-        // Send the real email!
         await transporter.sendMail(mailOptions);
-        console.log('📧 REAL EMAIL SENT SUCCESSFULLY TO:', recipient_email);
-
-        res.json({
-            status: 'success',
-            message: 'Transfer initiated! Check your real inbox.',
-            ticket_id: ticket_id,
-            status: 'pending'
-        });
-
+        res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
-        console.error('Transfer Error:', err.message);
-        res.status(500).json({ error: 'Server error' });
+        console.error(err);
+        res.status(500).json({ error: 'Failed to send email. Check your .env app password.' });
     }
 });
-// ==========================================
-// TICKET TRANSFER: Accept the Transfer
-// ==========================================
+
+// 3. Accept Route (Claims the Ticket)
 app.get('/api/tickets/accept', async (req, res) => {
     try {
         const token = req.query.token;
+        if (!token) return res.status(400).send('No token provided.');
 
-        if (!token) {
-            return res.status(400).send('<h1 style="color: red; text-align: center;">Error: No transfer link provided.</h1>');
-        }
-
-        const findQuery = `SELECT * FROM tickets WHERE transfer_token = $1 AND transfer_status = 'pending'`;
-        const { rows } = await pgPool.query(findQuery, [token]);
-
-        if (rows.length === 0) {
-            return res.status(400).send('<h1 style="color: red; text-align: center;">Error: Invalid or expired transfer link.</h1>');
-        }
+        const { rows } = await pgPool.query(`SELECT * FROM tickets WHERE transfer_token = $1 AND transfer_status = 'pending'`, [token]);
+        if (rows.length === 0) return res.status(400).send('<h2 style="color:red; text-align:center; font-family:sans-serif; margin-top:50px;">Error: Link invalid or expired.</h2>');
 
         const ticket = rows[0];
-
-        const updateQuery = `
+        
+        // Officially change ownership in the database
+        await pgPool.query(`
             UPDATE tickets 
-            SET user_id = $1, 
-                transfer_token = NULL, 
-                transfer_recipient_email = NULL, 
-                transfer_status = 'none' 
+            SET user_id = $1, transfer_token = NULL, transfer_recipient_email = NULL, transfer_status = 'none' 
             WHERE id = $2
-        `;
-        await pgPool.query(updateQuery, [ticket.transfer_recipient_email, ticket.id]);
+        `, [ticket.transfer_recipient_email, ticket.id]);
 
-        // 3. Show a beautiful success page to the friend with the 30-minute notice
+        // Beautiful success page with the 30-minute notice!
         res.send(`
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; padding: 40px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 60px; background-color: #121212; color: white; padding: 40px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                 <h1 style="color: #4CAF50; margin-bottom: 10px;">🎉 Ticket Accepted!</h1>
                 <p style="font-size: 18px; color: #cccccc;">You have successfully claimed Ticket #${ticket.id}.</p>
                 
@@ -652,17 +257,213 @@ app.get('/api/tickets/accept', async (req, res) => {
                         <span style="font-size: 24px; margin-right: 10px;">⏳</span> 
                         Your ticket will be available in your account within 30 minutes.
                     </p>
-                    <p style="color: #999999; font-size: 13px; margin: 10px 0 0 34px;">
-                        We are finalizing the transfer and generating your secure barcode. We will send you a final confirmation email once it is ready.
+                    <p style="color: #999999; font-size: 13px; margin: 10px 0 0 34px; line-height: 1.5;">
+                        We are finalizing the transfer and generating your secure barcode. We will send you a final confirmation email once it is ready to view.
                     </p>
                 </div>
                 
                 <p style="color: #666666; font-size: 14px; margin-top: 40px;">You can safely close this window.</p>
             </div>
         `);
-
     } catch (err) {
         console.error('Acceptance Error:', err.message);
-        res.status(500).send('<h1>Server error</h1>');
+        res.status(500).send('Server error');
     }
 });
+
+const bcrypt = require('bcrypt');
+
+// ==========================================
+// USER AUTHENTICATION ROUTES
+// ==========================================
+
+// 1. Register a New User
+app.post('/api/auth/register', async (req, res) => {
+    try {
+        const { email, password, name } = req.body;
+        if (!email || !password || !name) {
+            return res.status(400).json({ error: 'Please provide name, email, and password.' });
+        }
+
+        // Check if user already exists
+        const userCheck = await pgPool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (userCheck.rows.length > 0) {
+            return res.status(400).json({ error: 'An account with this email already exists.' });
+        }
+
+        // Hash the password securely
+        const saltRounds = 10;
+        const hashedPassword = await bcrypt.hash(password, saltRounds);
+
+        // Save user to database
+        const newUser = await pgPool.query(
+            'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email',
+            [name, email, hashedPassword]
+        );
+
+        res.json({ status: 'success', message: 'Account created successfully!', user: newUser.rows[0] });
+    } catch (err) {
+        console.error('Register Error:', err.message);
+        res.status(500).json({ error: 'Server error during registration.' });
+    }
+});
+
+// 2. Login User
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Please provide both email and password.' });
+        }
+
+        // Find user by email
+        const result = await pgPool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (result.rows.length === 0) {
+            return res.status(400).json({ error: 'Invalid email or password.' });
+        }
+
+        const user = result.rows[0];
+
+        // Compare submitted password with the hashed password in the DB
+        const validPassword = await bcrypt.compare(password, user.password);
+        if (!validPassword) {
+            return res.status(400).json({ error: 'Invalid email or password.' });
+        }
+
+        res.json({ 
+            status: 'success', 
+            message: 'Logged in successfully!', 
+            user: { id: user.id, name: user.name, email: user.email } 
+        });
+    } catch (err) {
+        console.error('Login Error:', err.message);
+        res.status(500).json({ error: 'Server error during login.' });
+    }
+});
+
+app.get('/api/setup-users', async (req, res) => {
+    try {
+        await pgPool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        res.send('👤 Users table successfully created!');
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+// ==========================================
+// ACTIVE CHECKOUT & REDIS SEAT LOCKING
+// ==========================================
+
+// 1. Temporarily lock a seat in Redis (Expires in 5 minutes)
+app.post('/api/seats/lock', async (req, res) => {
+    try {
+        const { seat_id, user_id } = req.body;
+        const lockKey = `lock:seat:${seat_id}`;
+
+        // Check if seat is already locked by someone else
+        const existingLock = await redisClient.get(lockKey);
+        if (existingLock) {
+            return res.status(400).json({ error: 'This seat is currently locked by another user!' });
+        }
+
+        // Lock seat for 300 seconds (5 minutes)
+        await redisClient.setEx(lockKey, 300, user_id.toString());
+        res.json({ status: 'success', message: 'Seat locked successfully for checkout!' });
+    } catch (err) {
+        console.error('Lock Error:', err.message);
+        res.status(500).json({ error: 'Failed to lock seat.' });
+    }
+});
+
+// 2. Complete Checkout & Assign Ticket to User
+app.post('/api/checkout', async (req, res) => {
+    try {
+        const { seat_id, user_email, price, event_name } = req.body;
+        const lockKey = `lock:seat:${seat_id}`;
+
+        // Clear the Redis lock
+        await redisClient.del(lockKey);
+
+        // Update seat status to 'sold' in PostgreSQL
+        await pgPool.query(`UPDATE seats SET status = 'sold' WHERE id = $1`, [seat_id]);
+
+        // Insert ticket with fallback event name if missing
+        const finalEventName = event_name || 'Live Concert';
+        const newTicket = await pgPool.query(`
+            INSERT INTO tickets (user_id, price, status, transfer_status, event_name) 
+            VALUES ($1, $2, 'owned', 'none', $3) 
+            RETURNING id;
+        `, [user_email, price || 150000, finalEventName]);
+
+        res.json({ 
+            status: 'success', 
+            message: 'Checkout successful!', 
+            ticket_id: newTicket.rows[0].id 
+        });
+    } catch (err) {
+        console.error('Checkout Error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get tickets for a specific logged-in user
+app.get('/api/user/tickets', async (req, res) => {
+    try {
+        const email = req.query.email;
+        if (!email) return res.status(400).json({ error: 'Email required' });
+
+        const { rows } = await pgPool.query('SELECT * FROM tickets WHERE user_id = $1 ORDER BY id DESC', [email]);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ==========================================
+// START SERVER
+// ==========================================
+const PORT = 5000;
+async function startServer() {
+    try {
+        await redisClient.connect();
+        
+        // Ensure tables exist safely without dropping user accounts on restart
+        await pgPool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS tickets (
+                id SERIAL PRIMARY KEY,
+                user_id VARCHAR(255) NOT NULL,
+                price NUMERIC,
+                status VARCHAR(50),
+                transfer_status VARCHAR(50),
+                event_name VARCHAR(255),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            -- Safely add event_name if it was missing from an older table version
+            ALTER TABLE tickets ADD COLUMN IF NOT EXISTS event_name VARCHAR(255);
+        `);
+
+        app.listen(PORT, () => {
+            console.log(`🚀 Server is running on http://localhost:${PORT}`);
+        });
+    } catch (err) {
+        console.error('Startup Error:', err.message);
+    }
+}
+startServer();

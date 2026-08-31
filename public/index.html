@@ -3,121 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lagos Tech Summit - Tickets</title>
+    <title>MyuzeTix</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-    <!-- 1. The Signature Blue Navbar -->
-    <nav class="tm-navbar">
-        <div class="logo">MyuzeTix</div>
-        <ul class="nav-links">
-            <li>Concerts</li>
-            <li>Sports</li>
-            <li>Arts, Theater & Comedy</li>
-            <li>Family</li>
-        </ul>
-        <div class="nav-right">
-            <a href="#" id="nav-my-tickets" class="sign-in" style="margin-right: 20px;">My Tickets</a>
-            <a href="#" class="sign-in">Sign In/Register</a>
-        </div>
-    </nav>
 
-    <!-- 2. The Search Bar -->
+    <header class="navbar">
+        <div class="logo">MyuzeTix</div>
+        <nav>
+            <a href="#">Concerts</a>
+            <a href="#">Sports</a>
+            <a href="#">Arts, Theater & Comedy</a>
+            <a href="#">Family</a>
+        </nav>
+        <div class="nav-links" id="nav-links-container">
+            <a href="#" id="nav-my-tickets">My Tickets</a>
+            <a href="#" id="nav-signin-btn">Sign In/Register</a>
+        </div>
+    </header>
+
     <div class="tm-search-container">
-        <div class="search-box">
-            <div class="search-section">
-                <span class="label">LOCATION</span>
-                <span class="value">Lagos, LA</span>
-            </div>
-            <div class="search-section divider">
-                <span class="label">DATES</span>
-                <span class="value">All Dates</span>
-            </div>
-            <div class="search-section divider flex-grow">
-                <span class="label">SEARCH</span>
-                <input type="text" id="search-input" placeholder="Artist, Event or Venue" style="width: 100%; border: none; outline: none; background: transparent;">
-            </div>
-            <button id="search-btn" style="background-color: #026cdf; color: white; border: none; padding: 10px 30px; border-radius: 4px; cursor: pointer; font-weight: bold;">Search</button>
+        <div class="tm-search-bar">
+            <input type="text" placeholder="Location (City or Zip Code)" class="search-field" style="flex: 0.8;">
+            <input type="text" placeholder="All Dates" class="search-field" style="flex: 0.6;">
+            <input type="text" id="search-input" placeholder="Artist, Event or Venue (Try BTS or Rock)" class="search-field" style="flex: 1.5;">
+            <button id="search-btn">Search</button>
         </div>
     </div>
 
-    <!-- 3. The Main Content Area -->
-    <main class="main-content">
-        <!-- Dynamic Event Grid -->
+    <main class="main-content" style="padding: 40px; background-color: #121212; min-height: 100vh;">
+
+        <!-- The Dynamic Event Grid -->
         <div class="tm-event-grid" id="dynamic-event-grid">
-            <!-- JavaScript will inject the image cards here! -->
+            <!-- JavaScript will draw the events here -->
         </div>
 
-            <!-- 2. Top Right Events -->
-            <div class="event-card disney">
-                <div class="event-info">
-                    <span class="category">UNDEFINED</span>
-                    <h3>Disney Worlds Collide Concert Tour</h3>
-                </div>
+        <!-- The Interactive Ticketing Engine -->
+        <div id="ticket-purchasing" class="hidden" style="color: white;">
+            <button id="back-btn" style="margin-bottom: 20px; padding: 8px 15px; cursor: pointer;">← Back to Events</button>
+            <h2 id="venue-name" style="margin-bottom: 20px;">Event Venue</h2>
+            <div id="seat-map" style="background-color: #1a1a1f; padding: 30px; border-radius: 8px;">
+                <!-- JavaScript will draw seats here -->
             </div>
-
-            <div class="event-card bluey">
-                <div class="event-info">
-                    <span class="category">CHILDREN'S THEATRE</span>
-                    <h3>Bluey's Big Play</h3>
-                </div>
-            </div>
-
-            <!-- 3. Bottom Right Events -->
-            <div class="event-card bottom-left">
-                <!-- Placeholder for the yellow car image -->
-            </div>
-
-            <div class="event-card bottom-right">
-                <!-- Placeholder for the bottom right artist -->
-            </div>
-
         </div>
-<!-- The Ticket Purchasing Area (Hidden until a card is clicked) -->
-        <section id="ticket-purchasing" class="hidden" style="color: white; margin-top: 30px;">
-            <button id="back-btn" style="background: #333; color: white; padding: 10px; border: none; cursor: pointer; margin-bottom: 20px;">&larr; Back to Events</button>
-            
-            <h2>Select Your Seat</h2>
-            <p>Location: <span id="venue-name">Loading...</span></p>
 
-            <div id="seat-map" class="seat-map">
-                <!-- Seats generated by JS -->
-            </div>
+<!-- My Tickets Wallet -->
+    <div id="my-tickets-section" class="hidden" style="color: white; margin-top: 20px; padding: 0 60px;">
+        <button id="wallet-back-btn" style="background: #333; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-bottom: 20px; font-weight: bold;">← Back to Events</button>
+        <h2>My Digital Wallet</h2>
+        <!-- JavaScript will dynamically load your ticket cards here -->
+    </div>
 
-            <!-- Checkout Section -->
-            <section id="checkout-section" class="checkout-panel hidden">
-                <h3>Checkout</h3>
-                <p>Selected Seat: <span id="checkout-seat-name">None</span></p>
-                <p>Price: ₦150,000</p>
-                <button id="buy-btn" class="search-btn" style="height: 40px; margin-top: 10px;">Confirm Purchase</button>
-                <p id="checkout-message"></p>
-            </section>
-        </section>
+        <!-- The Transfer Modal Popup -->
+        <div id="transfer-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 1000;">
+            <div style="background: #242429; padding: 40px; border-radius: 8px; width: 450px; text-align: center;">
+                <h3 style="color: white; margin-top: 0; margin-bottom: 20px;">Transfer Ticket Details</h3>
+                
+                <!-- NEW: Sender Name Input -->
+                <input type="text" id="transfer-sender-name" placeholder="Your Name (e.g. Rowland Joshua)" style="width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #444; outline: none; background: #121212; color: white;">
 
-        <!-- My Tickets Section (Hidden by default) -->
-        <section id="my-tickets-section" class="hidden" style="color: white; margin-top: 30px;">
-            <h2>My Tickets</h2>
-            <div class="ticket-card">
-                <span style="font-size: 12px; color: #ccc; font-weight: bold;">LAGOS TECH SUMMIT</span>
-                <h3 style="margin: 5px 0 15px 0; font-size: 24px;">General Admission</h3>
-                <p style="margin: 5px 0;">Seat: <strong>A1</strong></p>
-                <p style="margin: 5px 0; color: #4CAF50;">Status: <strong>Owned (Ticket #1)</strong></p>
-                <button id="open-transfer-btn" class="search-btn" style="height: 40px; margin-top: 20px; width: 100%;">Transfer to a Friend</button>
-            </div>
-        </section>
+                <input type="text" id="transfer-event-name" placeholder="Event Name (e.g. BTS World Tour)" style="width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #444; outline: none; background: #121212; color: white;">
+                
+                <input type="text" id="transfer-seat-info" placeholder="Seat Info (e.g. VIP, Row A, Seat 4)" style="width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #444; outline: none; background: #121212; color: white;">
 
-        <!-- Transfer Modal Pop-up -->
-        <div id="transfer-modal" class="modal hidden">
-            <div class="modal-content">
-                <span class="close-btn">&times;</span>
-                <h2 style="color: #111; margin-top: 0;">Transfer Ticket</h2>
-                <p style="color: #555;">Enter your friend's email address to securely transfer Ticket #1.</p>
-                <input type="email" id="friend-email" placeholder="e.g., friend@example.com" class="modal-input">
-                <button id="submit-transfer-btn" class="search-btn" style="width: 100%; margin-top: 15px; height: 45px;">Send Ticket Link</button>
-                <p id="transfer-message" style="margin-top: 15px; font-weight: bold; text-align: center;"></p>
+                <input type="email" id="friend-email" placeholder="Recipient's Email Address" style="width: 90%; padding: 12px; margin-bottom: 25px; border-radius: 4px; border: none; outline: none;">
+                
+                <button id="submit-transfer-btn" style="background: #4CAF50; color: white; border: none; padding: 12px 30px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 90%;">Send Ticket Securely</button>
+                <p id="close-modal-btn" style="color: #999; margin-top: 20px; cursor: pointer; text-decoration: underline;">Cancel</p>
+                <p id="transfer-message" style="margin-top: 15px; font-weight: bold;"></p>
             </div>
         </div>
     </main>
+<!-- Authentication Modal Popup -->
+    <div id="auth-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 2000;">
+        <div style="background: #242429; padding: 40px; border-radius: 8px; width: 400px; text-align: center; color: white; position: relative;">
+            <h3 id="auth-title" style="margin-top: 0; margin-bottom: 20px;">Sign In to MyuzeTix</h3>
+            
+            <!-- Name Input (Only used for Registration) -->
+            <input type="text" id="auth-name" placeholder="Full Name" class="hidden" style="width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #444; background: #121212; color: white; outline: none;">
+            
+            <input type="email" id="auth-email" placeholder="Email Address" style="width: 90%; padding: 12px; margin-bottom: 15px; border-radius: 4px; border: 1px solid #444; background: #121212; color: white; outline: none;">
+            
+            <input type="password" id="auth-password" placeholder="Password" style="width: 90%; padding: 12px; margin-bottom: 25px; border-radius: 4px; border: 1px solid #444; background: #121212; color: white; outline: none;">
+            
+            <button id="auth-submit-btn" style="background: #026cdf; color: white; border: none; padding: 12px 30px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 90%;">Sign In</button>
+            
+            <p id="auth-toggle-text" style="margin-top: 20px; font-size: 14px; color: #aaa; cursor: pointer;">
+                Don't have an account? <span style="color: #026cdf; text-decoration: underline;" id="auth-switch-mode">Register</span>
+            </p>
+            
+            <p id="auth-close-btn" style="color: #777; margin-top: 15px; cursor: pointer; font-size: 13px;">Cancel</p>
+            <p id="auth-message" style="margin-top: 15px; font-weight: bold; font-size: 14px;"></p>
+        </div>
+    </div>
+
+    <!-- Checkout Modal Popup -->
+    <div id="checkout-modal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); display: flex; justify-content: center; align-items: center; z-index: 2500;">
+        <div style="background: #242429; padding: 40px; border-radius: 8px; width: 400px; text-align: center; color: white;">
+            <h3 style="margin-top: 0; color: #026cdf;">Complete Your Checkout</h3>
+            <p id="checkout-seat-details" style="color: #ccc; margin: 20px 0; font-size: 16px;"></p>
+            <p style="font-size: 20px; font-weight: bold; color: #4CAF50; margin-bottom: 25px;">Price: ₦150,000</p>
+            
+            <button id="confirm-pay-btn" style="background: #4CAF50; color: white; border: none; padding: 12px 30px; border-radius: 4px; cursor: pointer; font-weight: bold; width: 90%;">Pay & Secure Ticket</button>
+            <p id="checkout-cancel-btn" style="color: #999; margin-top: 20px; cursor: pointer; text-decoration: underline; font-size: 14px;">Cancel</p>
+            <p id="checkout-message" style="margin-top: 15px; font-weight: bold; font-size: 14px;"></p>
+        </div>
+    </div>
 
     <script src="app.js"></script>
 </body>
