@@ -46,21 +46,20 @@ redisClient.on('error', (err) => console.log('Redis Error:', err));
 app.get('/api/search', async (req, res) => {
     try {
         const keyword = req.query.keyword;
-        if (!keyword) return res.status(400).json({ error: 'Please provide a search term.' });
+        const searchTerm = keyword ? keyword : 'Music';
+        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${process.env.TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(searchTerm)}`;
+        
+        console.log("Fetching from URL:", url);
+        const response = await fetch(url);
+        const data = await response.json();
+        console.log("Ticketmaster API Response Status:", response.status);
+        console.log("Ticketmaster Data Received:", JSON.stringify(data).substring(0, 200)); // Print first 200 chars
 
-        const apiKey = process.env.TICKETMASTER_API_KEY;
-        if (!apiKey) return res.status(500).json({ error: 'Missing API Key in .env file' });
+        if (!response.ok || !data._embedded || !data._embedded.events || data._embedded.events.length === 0) {
+            return res.status(404).json({ error: 'No live events found for this search.', details: data });
+        }
 
-        // PASTE THIS REPLACEMENT INSTEAD:
-const searchTerm = keyword ? keyword : 'Music';
-const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(searchTerm)}`;
-
-const response = await fetch(url);
-const data = await response.json();
-
-if (!response.ok || !data._embedded || !data._embedded.events || data._embedded.events.length === 0) {
-    return res.status(404).json({ error: 'No live events found for this search.' });
-}
+        // Rest of your insertion loop remains here...
 
         // Drop constraints and delete SEATS BEFORE EVENTS
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
