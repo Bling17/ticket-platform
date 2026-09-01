@@ -79,7 +79,7 @@ app.get('/api/search', async (req, res) => {
             await pgPool.query(`
                 INSERT INTO events (title, date, venue, image_url)
                 VALUES ($1, $2, $3, $4)
-            `, [title, date, venue, image_url]);
+            `, [title, venue, image_url]);
             
             insertedCount++;
         }
