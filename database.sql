@@ -18,10 +18,11 @@ CREATE TABLE IF NOT EXISTS venues (
 -- The Events themselves
 CREATE TABLE IF NOT EXISTS events (
     id SERIAL PRIMARY KEY,
-    venue_id INT REFERENCES venues(id),
-    title VARCHAR(200) NOT NULL,
-    start_time TIMESTAMP NOT NULL,
-    status VARCHAR(50) DEFAULT 'upcoming' -- upcoming, active, completed
+    title VARCHAR(255) NOT NULL,
+    date VARCHAR(100),       <-- Add this line
+    venue VARCHAR(255),
+    price NUMERIC,
+    image_url TEXT
 );
 
 -- The physical seats in a venue
