@@ -71,18 +71,16 @@ app.get('/api/search', async (req, res) => {
         let insertedCount = 0;
 
         for (let event of liveEvents) {
-            const title = event.name;
-            const date = `${event.dates.start.localDate} • ${event.dates.start.localTime || 'TBA'}`;
-            const venue = event._embedded.venues ? event._embedded.venues[0].name : 'Venue TBA';
-            const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0].url;
+    const title = event.name;
+    const venue = event.embedded.venues ? event.embedded.venues[0].name : 'Venue TBA';
+    const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0]?.url;
 
-            await pgPool.query(`
-                INSERT INTO events (title, date, venue, image_url)
-                VALUES ($1, $2, $3, $4)
-            `, [title, venue, image_url]);
-            
-            insertedCount++;
-        }
+    await pgPool.query(
+        `INSERT INTO events (title, venue, image_url) VALUES ($1, $2, $3)`,
+        [title, venue, image_url]
+    );
+    insertedCount++;
+}
 
         res.json({ message: 'Success', count: insertedCount });
     } catch (err) {
