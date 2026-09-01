@@ -26,11 +26,8 @@ app.use(express.static('public'));
 // POSTGRESQL & REDIS CONNECTIONS
 // ==========================================
 const pgPool = new Pool({
-    user: process.env.DB_USER || 'postgres',
-    host: process.env.DB_HOST || 'localhost',
-    database: process.env.DB_NAME || 'postgres',
-    password: process.env.DB_PASSWORD || '',
-    port: Number(process.env.DB_PORT || 5432),
+    connectionString: process.env.DATABASE_URL || 'postgres://postgres:mysecretpassword@localhost:5432/postgres',
+    ssl: process.env.DATABASE_URL ? { rejectUnauthorized: false } : false
 });
 
 pgPool.on('connect', () => {
@@ -430,7 +427,7 @@ app.get('/api/user/tickets', async (req, res) => {
 // ==========================================
 // START SERVER
 // ==========================================
-const PORT = 5000;
+const PORT = process.env.PORT || 5000;
 async function startServer() {
     try {
         await redisClient.connect();

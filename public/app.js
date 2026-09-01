@@ -245,9 +245,6 @@ const mainGrid = document.getElementById('dynamic-event-grid');
 const transferModal = document.getElementById('transfer-modal');
 
 // Open the Wallet
-
-
-
 // Open / Close the Modal
 document.getElementById('open-transfer-btn')?.addEventListener('click', () => {
     transferModal.style.display = 'flex';
