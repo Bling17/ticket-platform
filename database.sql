@@ -1,5 +1,5 @@
 -- Users who buy tickets or manage events
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     email VARCHAR(100) UNIQUE NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE users (
 );
 
 -- Venues where events happen
-CREATE TABLE venues (
+CREATE TABLE IF NOT EXISTS venues (
     id SERIAL PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
     city VARCHAR(100) NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE venues (
 );
 
 -- The Events themselves
-CREATE TABLE events (
+CREATE TABLE IF NOT EXISTS events (
     id SERIAL PRIMARY KEY,
     venue_id INT REFERENCES venues(id),
     title VARCHAR(200) NOT NULL,
@@ -25,7 +25,7 @@ CREATE TABLE events (
 );
 
 -- The physical seats in a venue
-CREATE TABLE seats (
+CREATE TABLE IF NOT EXISTS seats (
     id SERIAL PRIMARY KEY,
     venue_id INT REFERENCES venues(id),
     section VARCHAR(50),
@@ -34,7 +34,7 @@ CREATE TABLE seats (
 );
 
 -- The actual inventory (The most critical table)
-CREATE TABLE tickets (
+CREATE TABLE IF NOT EXISTS tickets (
     id SERIAL PRIMARY KEY,
     event_id INT REFERENCES events(id),
     seat_id INT REFERENCES seats(id),
