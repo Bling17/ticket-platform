@@ -455,7 +455,20 @@ async function startServer() {
             -- Safely add event_name if it was missing from an older table version
             ALTER TABLE tickets ADD COLUMN IF NOT EXISTS event_name VARCHAR(255);
         `);
-
+// ==========================================
+// TEMPORARY CLOUD DB SETUP ROUTE
+// ==========================================
+app.get('/api/setup-db', async (req, res) => {
+    const fs = require('fs');
+    try {
+        const sql = fs.readFileSync('database.sql', 'utf8');
+        await pgPool.query(sql);
+        res.send('<h1 style="color: green; text-align: center; margin-top: 50px;">✅ Database tables created successfully!</h1><p style="text-align: center;">You can close this tab and refresh your main app.</p>');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('<h1 style="color: red; text-align: center;">❌ Error creating tables</h1><p style="text-align: center;">' + err.message + '</p>');
+    }
+});
         app.listen(PORT, () => {
             console.log(`🚀 Server is running on http://localhost:${PORT}`);
         });
