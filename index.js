@@ -51,14 +51,16 @@ app.get('/api/search', async (req, res) => {
         const apiKey = process.env.TICKETMASTER_API_KEY;
         if (!apiKey) return res.status(500).json({ error: 'Missing API Key in .env file' });
 
-        const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(keyword)}&size=3`;
+        // PASTE THIS REPLACEMENT INSTEAD:
+const searchTerm = keyword ? keyword : 'Music';
+const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${apiKey}&keyword=${encodeURIComponent(searchTerm)}`;
 
-        const response = await fetch(url);
-        const data = await response.json();
+const response = await fetch(url);
+const data = await response.json();
 
-        if (!response.ok || !data._embedded || !data._embedded.events) {
-            return res.status(404).json({ error: 'No live events found for this search.' });
-        }
+if (!response.ok || !data._embedded || !data._embedded.events || data._embedded.events.length === 0) {
+    return res.status(404).json({ error: 'No live events found for this search.' });
+}
 
         // Drop constraints and delete SEATS BEFORE EVENTS
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
