@@ -81,7 +81,6 @@ app.get('/api/search', async (req, res) => {
     );
     insertedCount++;
 }
-
         res.json({ message: 'Success', count: insertedCount });
     } catch (err) {
         console.error('Search Error:', err);
