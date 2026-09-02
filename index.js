@@ -96,7 +96,8 @@ async function initializeDatabase() {
                 seat_id INT REFERENCES seats(id),
                 price DECIMAL(10, 2) NOT NULL,
                 status VARCHAR(20) DEFAULT 'available',
-                user_id INT REFERENCES users(id),
+                user_id VARCHAR(255),
+                event_name VARCHAR(255),
                 transfer_token VARCHAR(255),
                 transfer_recipient_email VARCHAR(255),
                 transfer_status VARCHAR(50) DEFAULT 'none'
@@ -475,18 +476,33 @@ app.post('/api/checkout', async (req, res) => {
         const { seat_id, user_email, price } = req.body;
         const lockKey = `lock:seat:${seat_id}`;
 
+        if (!user_email || !seat_id) {
+            return res.status(400).json({ error: 'Missing user_email or seat_id' });
+        }
+
+        // Get seat details to find event
+        const seatResult = await pgPool.query('SELECT event_id FROM seats WHERE id = $1', [seat_id]);
+        if (seatResult.rows.length === 0) {
+            return res.status(400).json({ error: 'Seat not found' });
+        }
+        const event_id = seatResult.rows[0].event_id;
+
+        // Get event name
+        const eventResult = await pgPool.query('SELECT title FROM events WHERE id = $1', [event_id]);
+        const event_name = eventResult.rows.length > 0 ? eventResult.rows[0].title : 'Live Event';
+
         // Clear the Redis lock
         await redisClient.del(lockKey);
 
         // Update seat status to 'sold' in PostgreSQL
         await pgPool.query(`UPDATE seats SET status = 'sold' WHERE id = $1`, [seat_id]);
 
-        // Insert ticket with the seat and price
+        // Insert ticket with the seat, price, and event name
         const newTicket = await pgPool.query(`
-            INSERT INTO tickets (seat_id, user_id, price, status, transfer_status) 
-            VALUES ($1, $2, $3, 'available', 'none') 
+            INSERT INTO tickets (event_id, seat_id, user_id, price, status, transfer_status, event_name) 
+            VALUES ($1, $2, $3, $4, 'available', 'none', $5) 
             RETURNING id;
-        `, [seat_id, user_email, price || 150000]);
+        `, [event_id, seat_id, user_email, price || 150000, event_name]);
 
         res.json({ 
             status: 'success', 
