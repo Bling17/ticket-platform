@@ -492,3 +492,117 @@ function checkUserSession() {
 
 // Run this check immediately when the page loads
 checkUserSession();
+
+// ==========================================
+// TICKET TRANSFER FUNCTIONALITY
+// ==========================================
+
+// Create transfer modal HTML if it doesn't exist
+if (!document.getElementById('transfer-modal')) {
+    const modalHTML = `
+        <div id="transfer-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+            <div style="background: #1a1a1f; padding: 40px; border-radius: 10px; max-width: 500px; color: white; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
+                <h2 style="color: #026cdf; margin-top: 0;">Transfer Ticket to Friend</h2>
+                <p style="color: #aaa;">Enter your friend's email to transfer this ticket</p>
+                
+                <input type="email" id="transfer-recipient-email" placeholder="Friend's Email Address" style="width: 100%; padding: 12px; margin: 15px 0; border: none; border-radius: 4px; background: #333; color: white; font-size: 14px;" />
+                
+                <div style="display: flex; gap: 10px; margin-top: 25px;">
+                    <button onclick="closeTransferModal()" style="flex: 1; padding: 12px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
+                    <button onclick="submitTransfer()" style="flex: 1; padding: 12px; background: #026cdf; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Send Ticket</button>
+                </div>
+                <p id="transfer-status" style="color: #f44336; text-align: center; margin-top: 15px; display: none;"></p>
+            </div>
+        </div>
+    `;
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+}
+
+// Store current ticket being transferred
+let currentTransferTicketId = null;
+
+function openTransferModal(ticketId) {
+    currentTransferTicketId = ticketId;
+    const modal = document.getElementById('transfer-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.getElementById('transfer-recipient-email').value = '';
+        document.getElementById('transfer-status').style.display = 'none';
+        document.getElementById('transfer-status').textContent = '';
+    }
+}
+
+function closeTransferModal() {
+    const modal = document.getElementById('transfer-modal');
+    if (modal) {
+        modal.style.display = 'none';
+    }
+    currentTransferTicketId = null;
+}
+
+async function submitTransfer() {
+    const recipientEmail = document.getElementById('transfer-recipient-email').value.trim();
+    const statusEl = document.getElementById('transfer-status');
+    
+    if (!recipientEmail || !recipientEmail.includes('@')) {
+        statusEl.textContent = '❌ Please enter a valid email address';
+        statusEl.style.display = 'block';
+        return;
+    }
+    
+    if (!currentTransferTicketId) {
+        statusEl.textContent = '❌ No ticket selected';
+        statusEl.style.display = 'block';
+        return;
+    }
+
+    try {
+        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
+        const ownerEmail = currentUser?.email || 'Unknown User';
+        const ownerName = currentUser?.name || 'A Friend';
+
+        // Get current user and event info from the wallet display
+        const response = await fetch(`/api/user/tickets?email=${encodeURIComponent(ownerEmail)}`);
+        const tickets = await response.json();
+        const ticketData = tickets.find(t => t.id === currentTransferTicketId);
+
+        if (!ticketData) {
+            statusEl.textContent = '❌ Ticket not found';
+            statusEl.style.display = 'block';
+            return;
+        }
+
+        const transferRes = await fetch('/api/tickets/transfer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                ticket_id: currentTransferTicketId,
+                owner_id: ownerName,
+                recipient_email: recipientEmail,
+                event_name: ticketData.event_name || 'Live Event',
+                seat_info: ticketData.seat_id ? `Seat #${ticketData.seat_id}` : 'General Admission'
+            })
+        });
+
+        const result = await transferRes.json();
+
+        if (transferRes.ok) {
+            statusEl.textContent = '✅ Ticket transfer initiated! Check your friend\'s email.';
+            statusEl.style.color = '#4CAF50';
+            statusEl.style.display = 'block';
+            
+            setTimeout(() => {
+                closeTransferModal();
+                // Reload wallet to update ticket status
+                document.getElementById('nav-wallet-btn')?.click();
+            }, 2000);
+        } else {
+            statusEl.textContent = `❌ ${result.error || 'Transfer failed'}`;
+            statusEl.style.display = 'block';
+        }
+    } catch (err) {
+        console.error('Transfer error:', err);
+        statusEl.textContent = '❌ An error occurred. Please try again.';
+        statusEl.style.display = 'block';
+    }
+}
