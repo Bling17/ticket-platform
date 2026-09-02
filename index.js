@@ -243,6 +243,15 @@ app.get('/api/events/:eventId/seats', async (req, res) => {
 // TICKET TRANSFER ENGINE (Email & Database)
 // ==========================================
 
+function escapeHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
 // 1. Setup Tickets Table & Mint a Test Ticket
 app.get('/api/setup-tickets', async (req, res) => {
     try {
@@ -284,24 +293,50 @@ app.post('/api/tickets/transfer', async (req, res) => {
         if (result.rows.length === 0) return res.status(400).json({ error: 'Ticket not found.' });
 
         const acceptLink = `http://localhost:5000/api/tickets/accept?token=${transferToken}`;
+        const safeOwner = escapeHtml(owner_id);
+        const safeEvent = escapeHtml(event_name);
+        const safeSeat = escapeHtml(seat_info);
 
         const mailOptions = {
             from: '"MyuzeTix Platform" <' + process.env.EMAIL_USER + '>',
             to: recipient_email,
-            subject: `🎟️ ${owner_id} sent you a ticket to ${event_name}!`,
+            subject: `${owner_id} sent you a ticket to ${event_name}`,
             html: `
-                <div style="background: #121212; color: white; padding: 40px; font-family: sans-serif; text-align: center; border-radius: 8px;">
-                    <h2 style="color: #026cdf; margin-bottom: 30px;">${owner_id} has transferred a ticket to you!</h2>
-                    
-                    <div style="background: #1a1a1f; padding: 25px; border-radius: 8px; margin-bottom: 30px; border-left: 4px solid #4CAF50; text-align: left; display: inline-block; min-width: 300px;">
-                        <h3 style="margin-top: 0; color: white;">${event_name}</h3>
-                        <p style="color: #ccc; font-size: 16px; margin-bottom: 5px;"><strong>Seat Info:</strong> ${seat_info}</p>
-                        <p style="color: #ccc; font-size: 14px; margin-bottom: 0;"><strong>Sender:</strong> ${owner_id}</p>
-                    </div>
-
-                    <br>
-                    <p style="color: #999;">Click the button below to accept it into your wallet.</p>
-                    <a href="${acceptLink}" style="display: inline-block; background: #026cdf; color: white; padding: 15px 30px; text-decoration: none; font-weight: bold; border-radius: 4px; margin-top: 15px;">ACCEPT TICKET</a>
+                <div style="margin:0; padding:24px 12px; background:#f2f4f7; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20;">
+                        <tr>
+                            <td style="padding:8px 30px 0;">
+                                <div style="color:#026cdf; font-size:20px; line-height:28px; font-weight:900; font-style:italic;">ticketmaster</div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:44px 30px 30px;">
+                                <h1 style="margin:0; color:#ffffff; font-size:21px; line-height:1.5; font-weight:700;">${safeOwner} has transferred you 1 ticket to<br>${safeEvent}</h1>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:0 30px 26px; color:#d4d4d8; font-size:15px; line-height:1.6;">
+                                <p style="margin:0 0 14px;">Hi there,</p>
+                                <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:0 30px 0;">
+                                <div style="height:18px; background:#242429; color:#a8a8ad; font-size:12px; line-height:18px;">&nbsp;</div>
+                                <div style="padding:26px 24px 24px; background:#242429;">
+                                    <h2 style="margin:0 0 10px; color:#ffffff; font-size:16px; line-height:1.4;">${safeEvent}</h2>
+                                    <p style="margin:0 0 10px; color:#96969d; font-size:14px; line-height:1.5;">Ticket transfer from ${safeOwner}</p>
+                                    <p style="margin:0 0 10px; color:#ffffff; font-size:15px; line-height:1.5; font-weight:700;">${safeSeat}</p>
+                                    <p style="margin:0; color:#96969d; font-size:14px; line-height:1.5;">Transfer Pending</p>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td style="padding:24px 30px 34px;">
+                                <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; letter-spacing:.2px;">ACCEPT TICKETS</a>
+                            </td>
+                        </tr>
+                    </table>
                 </div>
             `
         };

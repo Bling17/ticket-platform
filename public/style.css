@@ -4,6 +4,11 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     margin: 0;
     padding: 0;
+    overflow-x: hidden;
+}
+
+*, *::before, *::after {
+    box-sizing: border-box;
 }
 
 /* Header & Navigation */
@@ -11,6 +16,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: 20px;
     background-color: #026cdf;
     padding: 15px 40px;
     color: white;
@@ -26,6 +32,8 @@ body {
 .navbar nav {
     display: flex;
     gap: 25px;
+    flex: 1;
+    justify-content: center;
 }
 
 .navbar nav a, .navbar .nav-links a {
@@ -93,6 +101,52 @@ body {
     padding: 40px 60px;
 }
 
+#ticket-purchasing {
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+#seat-map {
+    overflow-x: auto;
+}
+
+#seat-map > div {
+    min-width: 0;
+}
+
+#transfer-modal > div,
+#auth-modal > div,
+#checkout-modal > div {
+    width: min(450px, calc(100vw - 32px)) !important;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+
+#my-tickets-section {
+    max-width: 1400px;
+    margin-left: auto !important;
+    margin-right: auto !important;
+}
+
+#my-tickets-section > div {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 20px;
+}
+
+#my-tickets-section > div > div {
+    width: auto !important;
+    min-width: 0;
+}
+
+button, input {
+    font: inherit;
+}
+
+button {
+    min-height: 44px;
+}
+
 .tm-event-grid {
     display: grid;
     grid-template-columns: 2fr 1.2fr;
@@ -153,3 +207,168 @@ body {
 
 /* Utility classes */
 .hidden { display: none !important; }
+
+@media (max-width: 900px) {
+    .navbar {
+        padding: 14px 24px;
+        flex-wrap: wrap;
+    }
+
+    .navbar nav {
+        order: 3;
+        flex-basis: 100%;
+        justify-content: flex-start;
+        gap: 20px;
+        overflow-x: auto;
+        padding-bottom: 2px;
+        scrollbar-width: none;
+    }
+
+    .navbar nav::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tm-search-container {
+        padding: 16px 24px 24px;
+    }
+
+    .tm-search-bar {
+        width: 100%;
+        flex-wrap: wrap;
+        padding: 8px;
+    }
+
+    .search-field {
+        flex: 1 1 calc(50% - 8px) !important;
+        min-width: 0;
+    }
+
+    #search-input {
+        flex-basis: 100%;
+        order: 3;
+    }
+
+    #search-btn {
+        flex: 1 1 100%;
+        order: 4;
+    }
+
+    .main-content {
+        padding: 32px 24px !important;
+    }
+
+    .tm-event-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .event-card.featured {
+        grid-row: auto;
+        min-height: 360px;
+    }
+
+    .event-card.featured h3 {
+        font-size: 32px;
+    }
+
+    #my-tickets-section {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+}
+
+@media (max-width: 560px) {
+    .navbar {
+        align-items: flex-start;
+        padding: 14px 16px;
+    }
+
+    .navbar .logo {
+        font-size: 21px;
+    }
+
+    .nav-links {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-left: auto;
+    }
+
+    .navbar nav {
+        gap: 16px;
+    }
+
+    .navbar nav a,
+    .navbar .nav-links a,
+    .nav-links span {
+        font-size: 12px !important;
+        white-space: nowrap;
+    }
+
+    .tm-search-container {
+        padding: 12px 16px 20px;
+    }
+
+    .tm-search-bar {
+        gap: 6px;
+    }
+
+    .search-field {
+        flex-basis: 100% !important;
+        margin: 0;
+    }
+
+    #search-input,
+    #search-btn {
+        order: initial;
+    }
+
+    .main-content {
+        padding: 24px 16px !important;
+    }
+
+    .event-card,
+    .event-card.featured {
+        min-height: 280px;
+        padding: 20px;
+    }
+
+    .event-card h3,
+    .event-card.featured h3 {
+        font-size: 25px;
+    }
+
+    #back-btn,
+    #wallet-back-btn {
+        width: 100%;
+    }
+
+    #venue-name {
+        font-size: 21px;
+        line-height: 1.3;
+    }
+
+    #seat-map {
+        padding: 16px !important;
+    }
+
+    #seat-map > div {
+        grid-template-columns: repeat(3, minmax(58px, 1fr)) !important;
+        gap: 8px !important;
+    }
+
+    #seat-map > div > div {
+        padding: 13px 3px !important;
+        min-height: 44px;
+    }
+
+    #transfer-modal > div,
+    #auth-modal > div,
+    #checkout-modal > div {
+        padding: 24px 18px !important;
+    }
+
+    #transfer-modal input,
+    #auth-modal input {
+        width: 100% !important;
+    }
+}
