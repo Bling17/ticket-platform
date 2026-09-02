@@ -526,6 +526,7 @@ function openTransferModal(ticketId) {
     const modal = document.getElementById('transfer-modal');
     if (modal) {
         modal.style.display = 'flex';
+        modal.classList.remove('hidden');
         document.getElementById('transfer-recipient-email').value = '';
         document.getElementById('transfer-status').style.display = 'none';
         document.getElementById('transfer-status').textContent = '';
@@ -536,6 +537,7 @@ function closeTransferModal() {
     const modal = document.getElementById('transfer-modal');
     if (modal) {
         modal.style.display = 'none';
+        modal.classList.add('hidden');
     }
     currentTransferTicketId = null;
 }
