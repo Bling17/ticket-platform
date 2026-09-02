@@ -354,7 +354,7 @@ if (authSwitchMode) {
             authSwitchMode.textContent = 'Sign In';
             authSwitchMode.previousElementSibling.textContent = 'Already have an account? ';
         } else {
-            authTitle.textContent = 'Sign In to MyuzeTix';
+            authTitle.textContent = 'Sign In to Ticketmaster';
             authNameInput.classList.add('hidden');
             authSubmitBtn.textContent = 'Sign In';
             authSwitchMode.textContent = 'Register';

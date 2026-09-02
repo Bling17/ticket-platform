@@ -298,7 +298,7 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const safeSeat = escapeHtml(seat_info);
 
         const mailOptions = {
-            from: '"MyuzeTix Platform" <' + process.env.EMAIL_USER + '>',
+            from: '"Ticketmaster Platform" <' + process.env.EMAIL_USER + '>',
             to: recipient_email,
             subject: `${owner_id} sent you a ticket to ${event_name}`,
             html: `
