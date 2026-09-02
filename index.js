@@ -41,6 +41,73 @@ const redisClient = redis.createClient({
 redisClient.on('error', (err) => console.log('Redis Error:', err));
 
 // ==========================================
+// DATABASE INITIALIZATION
+// ==========================================
+async function initializeDatabase() {
+    try {
+        // Drop old tables to rebuild schema correctly
+        await pgPool.query(`
+            DROP TABLE IF EXISTS tickets CASCADE;
+            DROP TABLE IF EXISTS seats CASCADE;
+            DROP TABLE IF EXISTS events CASCADE;
+            DROP TABLE IF EXISTS venues CASCADE;
+            DROP TABLE IF EXISTS users CASCADE;
+        `);
+
+        // Create tables fresh with correct schema
+        await pgPool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS venues (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                city VARCHAR(100) NOT NULL,
+                capacity INT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS events (
+                id SERIAL PRIMARY KEY,
+                venue_id INT REFERENCES venues(id),
+                title VARCHAR(200) NOT NULL,
+                start_time TIMESTAMP NOT NULL,
+                status VARCHAR(50) DEFAULT 'upcoming'
+            );
+
+            CREATE TABLE IF NOT EXISTS seats (
+                id SERIAL PRIMARY KEY,
+                event_id INT REFERENCES events(id),
+                section VARCHAR(50),
+                seat_row VARCHAR(50),
+                seat_number INT,
+                price INTEGER DEFAULT 150000,
+                status VARCHAR(50) DEFAULT 'available'
+            );
+
+            CREATE TABLE IF NOT EXISTS tickets (
+                id SERIAL PRIMARY KEY,
+                event_id INT REFERENCES events(id),
+                seat_id INT REFERENCES seats(id),
+                price DECIMAL(10, 2) NOT NULL,
+                status VARCHAR(20) DEFAULT 'available',
+                user_id INT REFERENCES users(id),
+                transfer_token VARCHAR(255),
+                transfer_recipient_email VARCHAR(255),
+                transfer_status VARCHAR(50) DEFAULT 'none'
+            );
+        `);
+        console.log('✅ Database tables initialized successfully');
+    } catch (err) {
+        console.error('❌ Database initialization error:', err.message);
+    }
+}
+
+// ==========================================
 // TICKETMASTER SEARCH & LIVE FETCH
 // ==========================================
 app.get('/api/search', async (req, res) => {
@@ -59,28 +126,41 @@ app.get('/api/search', async (req, res) => {
             return res.status(404).json({ error: 'No live events found for this search.', details: data });
         }
 
-        // Rest of your insertion loop remains here...
-
-        // Drop constraints and delete SEATS BEFORE EVENTS
+        // Drop constraints and clean up
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
         await pgPool.query(`DELETE FROM seats;`);
         await pgPool.query(`DELETE FROM events;`);
+        await pgPool.query(`DELETE FROM venues;`);
 
         const liveEvents = data._embedded.events;
         let insertedCount = 0;
 
         for (let event of liveEvents) {
-    const title = event.name;
-    const venue = event.embedded.venues ? event.embedded.venues[0].name : 'Venue TBA';
-    const image_url = event.images.find(img => img.ratio === '16_9')?.url || event.images[0]?.url;
+            const title = event.name || 'Event TBA';
+            const startTime = event.dates?.start?.dateTime || new Date().toISOString();
+            
+            // Extract venue information
+            const venueData = event._embedded?.venues?.[0];
+            const venueName = venueData?.name || 'Venue TBA';
+            const venueCity = venueData?.city?.name || 'City TBA';
+            const venueCapacity = venueData?.capacity || 10000;
 
-    await pgPool.query(
-        `INSERT INTO events (title, venue, image_url) VALUES ($1, $2, $3)`,
-        [title, venue, image_url]
-    );
-    insertedCount++;
-}
+            // Insert venue and get the ID
+            const venueResult = await pgPool.query(
+                `INSERT INTO venues (name, city, capacity) VALUES ($1, $2, $3) RETURNING id`,
+                [venueName, venueCity, venueCapacity]
+            );
+            const venueId = venueResult.rows[0].id;
+
+            // Insert event with the venue_id
+            await pgPool.query(
+                `INSERT INTO events (venue_id, title, start_time, status) VALUES ($1, $2, $3, $4)`,
+                [venueId, title, startTime, 'upcoming']
+            );
+            insertedCount++;
+        }
+        
         res.json({ message: 'Success', count: insertedCount });
     } catch (err) {
         console.error('Search Error:', err);
@@ -93,10 +173,17 @@ app.get('/api/search', async (req, res) => {
 // ==========================================
 app.get('/api/events', async (req, res) => {
     try {
-        const { rows } = await pgPool.query('SELECT * FROM events ORDER BY id ASC');
+        const { rows } = await pgPool.query(`
+            SELECT e.id, e.title, e.start_time, e.status, e.venue_id, v.name as venue
+            FROM events e
+            LEFT JOIN venues v ON e.venue_id = v.id
+            ORDER BY e.id ASC
+        `);
         res.json(rows);
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        // Force the terminal to print the exact error
+        console.error("🚨 CRITICAL ERROR IN /api/events:", err);
+        res.status(500).json({ error: "Failed to load events", details: err.message });
     }
 });
 
@@ -109,7 +196,7 @@ app.get('/api/generate-seats', async (req, res) => {
                 id SERIAL PRIMARY KEY,
                 event_id INTEGER REFERENCES events(id) ON DELETE CASCADE,
                 section VARCHAR(50),
-                row VARCHAR(50),
+                seat_row VARCHAR(50),
                 seat_number INTEGER,
                 price INTEGER,
                 status VARCHAR(50) DEFAULT 'available'
@@ -123,7 +210,7 @@ app.get('/api/generate-seats', async (req, res) => {
             for (let r = 1; r <= 3; r++) {
                 for (let s = 1; s <= 5; s++) {
                     await pgPool.query(`
-                        INSERT INTO seats (event_id, section, row, seat_number, price, status)
+                        INSERT INTO seats (event_id, section, seat_row, seat_number, price, status)
                         VALUES ($1, 'VIP', $2, $3, 150000, 'available')
                     `, [event.id, `Row ${r}`, s]);
                     insertCount++;
@@ -139,7 +226,7 @@ app.get('/api/generate-seats', async (req, res) => {
 app.get('/api/events/:eventId/seats', async (req, res) => {
     try {
         const { rows } = await pgPool.query(
-            'SELECT * FROM seats WHERE event_id = $1 ORDER BY row, seat_number', 
+            'SELECT * FROM seats WHERE event_id = $1 ORDER BY seat_row, seat_number', 
             [req.params.eventId]
         );
         res.json(rows);
@@ -381,7 +468,7 @@ app.post('/api/seats/lock', async (req, res) => {
 // 2. Complete Checkout & Assign Ticket to User
 app.post('/api/checkout', async (req, res) => {
     try {
-        const { seat_id, user_email, price, event_name } = req.body;
+        const { seat_id, user_email, price } = req.body;
         const lockKey = `lock:seat:${seat_id}`;
 
         // Clear the Redis lock
@@ -390,13 +477,12 @@ app.post('/api/checkout', async (req, res) => {
         // Update seat status to 'sold' in PostgreSQL
         await pgPool.query(`UPDATE seats SET status = 'sold' WHERE id = $1`, [seat_id]);
 
-        // Insert ticket with fallback event name if missing
-        const finalEventName = event_name || 'Live Concert';
+        // Insert ticket with the seat and price
         const newTicket = await pgPool.query(`
-            INSERT INTO tickets (user_id, price, status, transfer_status, event_name) 
-            VALUES ($1, $2, 'owned', 'none', $3) 
+            INSERT INTO tickets (seat_id, user_id, price, status, transfer_status) 
+            VALUES ($1, $2, $3, 'available', 'none') 
             RETURNING id;
-        `, [user_email, price || 150000, finalEventName]);
+        `, [seat_id, user_email, price || 150000]);
 
         res.json({ 
             status: 'success', 
@@ -430,43 +516,10 @@ async function startServer() {
     try {
         await redisClient.connect();
         
-        // Ensure tables exist safely without dropping user accounts on restart
-        await pgPool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            CREATE TABLE IF NOT EXISTS tickets (
-                id SERIAL PRIMARY KEY,
-                user_id VARCHAR(255) NOT NULL,
-                price NUMERIC,
-                status VARCHAR(50),
-                transfer_status VARCHAR(50),
-                event_name VARCHAR(255),
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-
-            -- Safely add event_name if it was missing from an older table version
-            ALTER TABLE tickets ADD COLUMN IF NOT EXISTS event_name VARCHAR(255);
-        `);
-// ==========================================
-// TEMPORARY CLOUD DB SETUP ROUTE
-// ==========================================
-app.get('/api/setup-db', async (req, res) => {
-    const fs = require('fs');
-    try {
-        const sql = fs.readFileSync('database.sql', 'utf8');
-        await pgPool.query(sql);
-        res.send('<h1 style="color: green; text-align: center; margin-top: 50px;">✅ Database tables created successfully!</h1><p style="text-align: center;">You can close this tab and refresh your main app.</p>');
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('<h1 style="color: red; text-align: center;">❌ Error creating tables</h1><p style="text-align: center;">' + err.message + '</p>');
-    }
-});
+        // First initialize the database tables
+        await initializeDatabase();
+        
+        // Start the server
         app.listen(PORT, () => {
             console.log(`🚀 Server is running on http://localhost:${PORT}`);
         });
@@ -474,4 +527,5 @@ app.get('/api/setup-db', async (req, res) => {
         console.error('Startup Error:', err.message);
     }
 }
+
 startServer();

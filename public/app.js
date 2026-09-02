@@ -11,12 +11,17 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadEvents() {
         try {
             const response = await fetch('/api/events');
+            
+            if (!response.ok) {
+                throw new Error(`Server responded with status ${response.status}`);
+            }
+            
             const events = await response.json();
             
             if (eventGrid) eventGrid.innerHTML = ''; 
             
-            if (events.length === 0 && eventGrid) {
-                eventGrid.innerHTML = '<p style="color: white; text-align: center; width: 100%;">No events in database. Search above to pull live data!</p>';
+            if (!Array.isArray(events) || events.length === 0) {
+                if (eventGrid) eventGrid.innerHTML = '<p style="color: white; text-align: center; width: 100%;">No events in database. Search above to pull live data!</p>';
                 return;
             }
 
@@ -24,14 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 const card = document.createElement('div');
                 card.className = index === 0 ? 'event-card featured' : 'event-card'; 
                 
-                card.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0) 100%), url('${event.image_url}')`;
-                card.style.backgroundSize = 'cover';
-                card.style.backgroundPosition = 'center';
+                // Background gradient without image
+                card.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
                 
                 card.innerHTML = `
                     <div class="card-content">
                         <h3>${event.title}</h3>
-                        <p>${event.date} • ${event.venue}</p>
+                        <p>${new Date(event.start_time).toLocaleDateString()} • ${event.venue}</p>
                     </div>
                 `;
 
