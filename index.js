@@ -76,7 +76,8 @@ async function initializeDatabase() {
                 venue_id INT REFERENCES venues(id),
                 title VARCHAR(200) NOT NULL,
                 start_time TIMESTAMP NOT NULL,
-                status VARCHAR(50) DEFAULT 'upcoming'
+                status VARCHAR(50) DEFAULT 'upcoming',
+                image_url TEXT
             );
 
             CREATE TABLE IF NOT EXISTS seats (
@@ -140,6 +141,9 @@ app.get('/api/search', async (req, res) => {
             const title = event.name || 'Event TBA';
             const startTime = event.dates?.start?.dateTime || new Date().toISOString();
             
+            // Extract image URL (prefer 16_9 ratio)
+            const imageUrl = event.images?.find(img => img.ratio === '16_9')?.url || event.images?.[0]?.url || null;
+            
             // Extract venue information
             const venueData = event._embedded?.venues?.[0];
             const venueName = venueData?.name || 'Venue TBA';
@@ -153,10 +157,10 @@ app.get('/api/search', async (req, res) => {
             );
             const venueId = venueResult.rows[0].id;
 
-            // Insert event with the venue_id
+            // Insert event with the venue_id and image_url
             await pgPool.query(
-                `INSERT INTO events (venue_id, title, start_time, status) VALUES ($1, $2, $3, $4)`,
-                [venueId, title, startTime, 'upcoming']
+                `INSERT INTO events (venue_id, title, start_time, status, image_url) VALUES ($1, $2, $3, $4, $5)`,
+                [venueId, title, startTime, 'upcoming', imageUrl]
             );
             insertedCount++;
         }
@@ -174,7 +178,7 @@ app.get('/api/search', async (req, res) => {
 app.get('/api/events', async (req, res) => {
     try {
         const { rows } = await pgPool.query(`
-            SELECT e.id, e.title, e.start_time, e.status, e.venue_id, v.name as venue
+            SELECT e.id, e.title, e.start_time, e.status, e.venue_id, e.image_url, v.name as venue
             FROM events e
             LEFT JOIN venues v ON e.venue_id = v.id
             ORDER BY e.id ASC

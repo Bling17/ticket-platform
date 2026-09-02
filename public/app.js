@@ -29,8 +29,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const card = document.createElement('div');
                 card.className = index === 0 ? 'event-card featured' : 'event-card'; 
                 
-                // Background gradient without image
-                card.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                // Use actual image if available, otherwise use gradient
+                if (event.image_url) {
+                    card.style.backgroundImage = `linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0) 50%), url('${event.image_url}')`;
+                    card.style.backgroundSize = 'cover';
+                    card.style.backgroundPosition = 'center';
+                } else {
+                    card.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                }
                 
                 card.innerHTML = `
                     <div class="card-content">
