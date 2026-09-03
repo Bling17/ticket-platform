@@ -47,7 +47,6 @@ redisClient.on('error', (err) => console.log('Redis Error:', err));
 // ==========================================
 async function initializeDatabase() {
     try {
-        // 1. Create tables if they don't exist
         await pgPool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -96,18 +95,7 @@ async function initializeDatabase() {
                 transfer_status VARCHAR(50) DEFAULT 'none'
             );
         `);
-
-        // 2. MIGRATION FIX: If the table already existed with 'password_hash', rename it to 'password'
-        await pgPool.query(`
-            DO $$
-            BEGIN
-                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' and column_name='password_hash') THEN
-                    ALTER TABLE users RENAME COLUMN password_hash TO password;
-                END IF;
-            END $$;
-        `);
-
-        console.log('✅ Database tables initialized and verified successfully');
+        console.log('✅ Database tables initialized successfully');
     } catch (err) {
         console.error('❌ Database initialization error:', err.message);
     }
@@ -298,7 +286,11 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const seatText = ticketInfo.section ? `Section ${ticketInfo.section}, Row ${ticketInfo.seat_row}, Seat ${ticketInfo.seat_number}` : (req.body.seat_info || 'General Admission');
         const imageUrl = ticketInfo.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80';
 
-        const acceptLink = `https://ticketmaster-ny0h.onrender.com/api/tickets/accept?token=${transferToken}`;
+        // Dynamically use the host protocol and domain (supports Render and Localhost automatically)
+        const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+        const host = req.get('host');
+        const acceptLink = `${protocol}://${host}/api/tickets/accept?token=${transferToken}`;
+
         const safeOwner = escapeHtml(owner_id);
         const safeEvent = escapeHtml(eventTitle);
         const safeSeat = escapeHtml(seatText);
@@ -344,8 +336,8 @@ app.post('/api/tickets/transfer', async (req, res) => {
         await transporter.sendMail(mailOptions);
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Failed to send email.' });
+        console.error('Transfer Error:', err);
+        res.status(500).json({ error: 'Failed to send email: ' + err.message });
     }
 });
 
@@ -516,6 +508,7 @@ app.get('/api/user/tickets', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 app.get('/api/fix-users-table', async (req, res) => {
     try {
         await pgPool.query(`DROP TABLE IF EXISTS users CASCADE;`);
@@ -533,15 +526,14 @@ app.get('/api/fix-users-table', async (req, res) => {
         res.status(500).send(err.message);
     }
 });
+
 // ==========================================
 // START SERVER
 // ==========================================
 const PORT = process.env.PORT || 5000;
 async function startServer() {
     try {
-        // Connect to Redis safely (won't crash app if connection fails on Render)
         await redisClient.connect().catch(e => console.log('Redis connection notice:', e.message));
-
         await initializeDatabase();
 
         app.listen(PORT, () => {
