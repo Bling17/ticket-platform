@@ -47,22 +47,14 @@ redisClient.on('error', (err) => console.log('Redis Error:', err));
 // ==========================================
 async function initializeDatabase() {
     try {
-        // Drop old tables to rebuild schema correctly
-        await pgPool.query(`
-            DROP TABLE IF EXISTS tickets CASCADE;
-            DROP TABLE IF EXISTS seats CASCADE;
-            DROP TABLE IF EXISTS events CASCADE;
-            DROP TABLE IF EXISTS venues CASCADE;
-            DROP TABLE IF EXISTS users CASCADE;
-        `);
-
-        // Create tables fresh with correct schema
+        // Create tables safely without dropping if they already exist,
+        // to prevent wiping user accounts on every server restart!
         await pgPool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 email VARCHAR(100) UNIQUE NOT NULL,
-                password_hash VARCHAR(255) NOT NULL,
+                password VARCHAR(255) NOT NULL,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -123,14 +115,11 @@ app.get('/api/search', async (req, res) => {
         console.log("Fetching from URL:", url);
         const response = await fetch(url);
         const data = await response.json();
-        console.log("Ticketmaster API Response Status:", response.status);
-        console.log("Ticketmaster Data Received:", JSON.stringify(data).substring(0, 200));
 
         if (!response.ok || !data._embedded || !data._embedded.events || data._embedded.events.length === 0) {
             return res.status(404).json({ error: 'No live events found for this search.', details: data });
         }
 
-        // Drop constraints and clean up
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_event_id_fkey;`);
         await pgPool.query(`ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_seat_id_fkey;`);
         await pgPool.query(`DELETE FROM seats;`);
@@ -143,7 +132,6 @@ app.get('/api/search', async (req, res) => {
         for (let event of liveEvents) {
             const title = event.name || 'Event TBA';
             const startTime = event.dates?.start?.dateTime || new Date().toISOString();
-            
             const imageUrl = event.images?.find(img => img.ratio === '16_9')?.url || event.images?.[0]?.url || null;
             
             const venueData = event._embedded?.venues?.[0];
@@ -250,7 +238,6 @@ function escapeHtml(value) {
         .replace(/'/g, '&#039;');
 }
 
-// 1. Setup Tickets Table & Mint a Test Ticket
 app.get('/api/setup-tickets', async (req, res) => {
     try {
         await pgPool.query(`
@@ -263,19 +250,13 @@ app.get('/api/setup-tickets', async (req, res) => {
                 transfer_recipient_email VARCHAR(255),
                 transfer_status VARCHAR(50) DEFAULT 'none'
             );
-            
-            INSERT INTO tickets (id, user_id, price, status) 
-            VALUES (1, 'user_joshua_123', 150000, 'owned')
-            ON CONFLICT (id) DO UPDATE 
-            SET user_id = 'user_joshua_123', price = 150000, status = 'owned', transfer_status = 'none', transfer_token = NULL;
         `);
-        res.send('🎟️ Tickets table created and Test Ticket #1 minted!');
+        res.send('🎟️ Tickets table created successfully!');
     } catch (err) {
         res.status(500).send(err.message);
     }
 });
 
-// 2. Transfer Route (Sends the Real Email with Actual Event Image, Date & Venue)
 app.post('/api/tickets/transfer', async (req, res) => {
     try {
         const { ticket_id, owner_id, recipient_email } = req.body;
@@ -289,7 +270,6 @@ app.post('/api/tickets/transfer', async (req, res) => {
 
         if (result.rows.length === 0) return res.status(400).json({ error: 'Ticket not found.' });
 
-        // Fetch actual event, venue, and seat data dynamically from PostgreSQL using ticket_id
         const detailsQuery = await pgPool.query(`
             SELECT t.*, e.title as event_title, e.start_time, e.image_url, v.name as venue_name, s.section, s.seat_row, s.seat_number
             FROM tickets t
@@ -308,7 +288,7 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const seatText = ticketInfo.section ? `Section ${ticketInfo.section}, Row ${ticketInfo.seat_row}, Seat ${ticketInfo.seat_number}` : (req.body.seat_info || 'General Admission');
         const imageUrl = ticketInfo.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80';
 
-        const acceptLink = `http://localhost:5000/api/tickets/accept?token=${transferToken}`;
+        const acceptLink = `https://ticketmaster-ny0h.onrender.com/api/tickets/accept?token=${transferToken}`;
         const safeOwner = escapeHtml(owner_id);
         const safeEvent = escapeHtml(eventTitle);
         const safeSeat = escapeHtml(seatText);
@@ -323,54 +303,28 @@ app.post('/api/tickets/transfer', async (req, res) => {
             html: `
                 <div style="margin:0; padding:24px 12px; background:#121212; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
                     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20; border-radius:8px; overflow:hidden;">
-                        <!-- Greeting -->
                         <tr>
                             <td style="padding:30px 30px 20px; color:#d4d4d8; font-size:15px; line-height:1.6;">
                                 <p style="margin:0 0 16px;">Hi ${escapeHtml(recipient_email.split('@')[0])},</p>
                                 <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
                             </td>
                         </tr>
-                        <!-- Dynamic Event Image Banner -->
                         <tr>
                             <td style="padding:0 30px;">
                                 <div style="width:100%; height:220px; background:url('${safeImage}') center/cover no-repeat; border-radius:4px 4px 0 0;"></div>
                             </td>
                         </tr>
-                        <!-- Ticket Details Container -->
                         <tr>
                             <td style="padding:0 30px 30px;">
                                 <div style="background:#242429; padding:24px; border-radius:0 0 4px 4px;">
-                                    <!-- Dynamic Event Title & Actual Date/Venue -->
                                     <h2 style="margin:0 0 8px; color:#ffffff; font-size:16px; line-height:1.4; font-weight:700;">${safeEvent}</h2>
                                     <p style="margin:0 0 16px; color:#96969d; font-size:13px; line-height:1.5;">${safeDate} • ${safeVenue}</p>
-
-                                    <!-- Seats & Status -->
                                     <div style="border-top:1px solid #2f2f36; padding-top:16px; margin-bottom:24px;">
                                         <p style="margin:0 0 6px; color:#ffffff; font-size:15px; font-weight:700;">${safeSeat}</p>
                                         <p style="margin:0; color:#96969d; font-size:13px;">Transfer Pending</p>
                                     </div>
-
-                                    <!-- Accept Button -->
                                     <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; font-weight:700; border-radius:4px; margin-bottom:24px;">ACCEPT TICKETS</a>
-
-                                    <!-- Fine Print / Terms -->
-                                    <p style="margin:0 0 12px; color:#96969d; font-size:11px; line-height:1.5;">
-                                        ℹ️ By clicking 'ACCEPT TICKETS', you agree to our Terms of Use and any applicable ticket back terms.
-                                    </p>
-                                    <p style="margin:0 0 12px; color:#96969d; font-size:11px; line-height:1.5;">
-                                        If the ticket(s) were obtained fraudulently by the person transferring them, they may be canceled at any time and removed from your account.
-                                    </p>
-                                    <p style="margin:0; color:#96969d; font-size:11px; font-weight:bold;">
-                                        This email is NOT your ticket.
-                                    </p>
                                 </div>
-                            </td>
-                        </tr>
-                        <!-- What's Next Section -->
-                        <tr>
-                            <td style="padding:0 30px 30px; color:#96969d; font-size:13px; line-height:1.5;">
-                                <p style="margin:0 0 8px; color:#ffffff; font-weight:bold; font-size:14px;">What's Next?</p>
-                                <p style="margin:0;">Once you've accepted the ticket(s), we'll send you another email confirming that the process is complete.</p>
                             </td>
                         </tr>
                     </table>
@@ -381,11 +335,10 @@ app.post('/api/tickets/transfer', async (req, res) => {
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
         console.error(err);
-        res.status(500).json({ error: 'Failed to send email. Check your .env app password.' });
+        res.status(500).json({ error: 'Failed to send email.' });
     }
 });
 
-// 3. Accept Route (Claims the Ticket)
 app.get('/api/tickets/accept', async (req, res) => {
     try {
         const token = req.query.token;
@@ -403,21 +356,9 @@ app.get('/api/tickets/accept', async (req, res) => {
         `, [ticket.transfer_recipient_email, ticket.id]);
 
         res.send(`
-            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 60px; background-color: #121212; color: white; padding: 40px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+            <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 60px; background-color: #121212; color: white; padding: 40px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto;">
                 <h1 style="color: #4CAF50; margin-bottom: 10px;">🎉 Ticket Accepted!</h1>
                 <p style="font-size: 18px; color: #cccccc;">You have successfully claimed Ticket #${ticket.id}.</p>
-                
-                <div style="background-color: #242429; padding: 20px; border-radius: 8px; margin-top: 30px; border-left: 5px solid #026cdf; text-align: left;">
-                    <p style="font-size: 16px; margin: 0; font-weight: bold; color: #ffffff; display: flex; align-items: center;">
-                        <span style="font-size: 24px; margin-right: 10px;">⏳</span> 
-                        Your ticket will be available in your account within 30 minutes.
-                    </p>
-                    <p style="color: #999999; font-size: 13px; margin: 10px 0 0 34px; line-height: 1.5;">
-                        We are finalizing the transfer and generating your secure barcode. We will send you a final confirmation email once it is ready to view.
-                    </p>
-                </div>
-                
-                <p style="color: #666666; font-size: 14px; margin-top: 40px;">You can safely close this window.</p>
             </div>
         `);
     } catch (err) {
@@ -455,7 +396,7 @@ app.post('/api/auth/register', async (req, res) => {
         res.json({ status: 'success', message: 'Account created successfully!', user: newUser.rows[0] });
     } catch (err) {
         console.error('Register Error:', err.message);
-        res.status(500).json({ error: 'Server error during registration.' });
+        res.status(500).json({ error: 'Server error during registration: ' + err.message });
     }
 });
 
@@ -486,23 +427,6 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (err) {
         console.error('Login Error:', err.message);
         res.status(500).json({ error: 'Server error during login.' });
-    }
-});
-
-app.get('/api/setup-users', async (req, res) => {
-    try {
-        await pgPool.query(`
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                name VARCHAR(255) NOT NULL,
-                email VARCHAR(255) UNIQUE NOT NULL,
-                password VARCHAR(255) NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
-        res.send('👤 Users table successfully created!');
-    } catch (err) {
-        res.status(500).send(err.message);
     }
 });
 
@@ -546,7 +470,11 @@ app.post('/api/checkout', async (req, res) => {
         const eventResult = await pgPool.query('SELECT title FROM events WHERE id = $1', [event_id]);
         const event_name = eventResult.rows.length > 0 ? eventResult.rows[0].title : 'Live Event';
 
-        await redisClient.del(lockKey);
+        try {
+            await redisClient.del(lockKey);
+        } catch (redisErr) {
+            console.log('Redis delete warning:', redisErr.message);
+        }
 
         await pgPool.query(`UPDATE seats SET status = 'sold' WHERE id = $1`, [seat_id]);
 
@@ -585,11 +513,13 @@ app.get('/api/user/tickets', async (req, res) => {
 const PORT = process.env.PORT || 5000;
 async function startServer() {
     try {
-        await redisClient.connect();
+        // Connect to Redis safely (won't crash app if connection fails on Render)
+        await redisClient.connect().catch(e => console.log('Redis connection notice:', e.message));
+
         await initializeDatabase();
-        
+
         app.listen(PORT, () => {
-            console.log(`🚀 Server is running on http://localhost:${PORT}`);
+            console.log(`🚀 Server is running on port ${PORT}`);
         });
     } catch (err) {
         console.error('Startup Error:', err.message);
