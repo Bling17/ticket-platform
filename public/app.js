@@ -582,7 +582,10 @@ async function submitTransfer() {
                 owner_id: ownerName,
                 recipient_email: recipientEmail,
                 event_name: ticketData.event_name || 'Live Event',
-                seat_info: ticketData.seat_id ? `Seat #${ticketData.seat_id}` : 'General Admission'
+                seat_info: ticketData.seat_id ? `Seat #${ticketData.seat_id}` : 'General Admission',
+                event_date: ticketData.event_date || 'Sun, Aug 16, 2026, 8:00 PM',
+                venue_name: ticketData.venue_name || 'AT&T Stadium',
+                image_url: ticketData.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80'
             })
         });
 

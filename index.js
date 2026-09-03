@@ -10,7 +10,9 @@ const nodemailer = require('nodemailer');
 // EMAIL SETUP
 // ==========================================
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, // false for port 587 (TLS)
     auth: {
         user: process.env.EMAIL_USER,
         pass: process.env.EMAIL_PASSWORD
@@ -122,7 +124,7 @@ app.get('/api/search', async (req, res) => {
         const response = await fetch(url);
         const data = await response.json();
         console.log("Ticketmaster API Response Status:", response.status);
-        console.log("Ticketmaster Data Received:", JSON.stringify(data).substring(0, 200)); // Print first 200 chars
+        console.log("Ticketmaster Data Received:", JSON.stringify(data).substring(0, 200));
 
         if (!response.ok || !data._embedded || !data._embedded.events || data._embedded.events.length === 0) {
             return res.status(404).json({ error: 'No live events found for this search.', details: data });
@@ -142,23 +144,19 @@ app.get('/api/search', async (req, res) => {
             const title = event.name || 'Event TBA';
             const startTime = event.dates?.start?.dateTime || new Date().toISOString();
             
-            // Extract image URL (prefer 16_9 ratio)
             const imageUrl = event.images?.find(img => img.ratio === '16_9')?.url || event.images?.[0]?.url || null;
             
-            // Extract venue information
             const venueData = event._embedded?.venues?.[0];
             const venueName = venueData?.name || 'Venue TBA';
             const venueCity = venueData?.city?.name || 'City TBA';
             const venueCapacity = venueData?.capacity || 10000;
 
-            // Insert venue and get the ID
             const venueResult = await pgPool.query(
                 `INSERT INTO venues (name, city, capacity) VALUES ($1, $2, $3) RETURNING id`,
                 [venueName, venueCity, venueCapacity]
             );
             const venueId = venueResult.rows[0].id;
 
-            // Insert event with the venue_id and image_url
             await pgPool.query(
                 `INSERT INTO events (venue_id, title, start_time, status, image_url) VALUES ($1, $2, $3, $4, $5)`,
                 [venueId, title, startTime, 'upcoming', imageUrl]
@@ -186,7 +184,6 @@ app.get('/api/events', async (req, res) => {
         `);
         res.json(rows);
     } catch (err) {
-        // Force the terminal to print the exact error
         console.error("🚨 CRITICAL ERROR IN /api/events:", err);
         res.status(500).json({ error: "Failed to load events", details: err.message });
     }
@@ -239,6 +236,7 @@ app.get('/api/events/:eventId/seats', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 // ==========================================
 // TICKET TRANSFER ENGINE (Email & Database)
 // ==========================================
@@ -277,11 +275,10 @@ app.get('/api/setup-tickets', async (req, res) => {
     }
 });
 
-// 2. Transfer Route (Sends the Real Email)
+// 2. Transfer Route (Sends the Real Email with Actual Event Image, Date & Venue)
 app.post('/api/tickets/transfer', async (req, res) => {
     try {
-        // NEW: We receive the custom event_name and seat_info from the frontend
-        const { ticket_id, owner_id, recipient_email, event_name, seat_info } = req.body;
+        const { ticket_id, owner_id, recipient_email } = req.body;
         const transferToken = crypto.randomBytes(20).toString('hex'); 
 
         const result = await pgPool.query(`
@@ -292,55 +289,94 @@ app.post('/api/tickets/transfer', async (req, res) => {
 
         if (result.rows.length === 0) return res.status(400).json({ error: 'Ticket not found.' });
 
+        // Fetch actual event, venue, and seat data dynamically from PostgreSQL using ticket_id
+        const detailsQuery = await pgPool.query(`
+            SELECT t.*, e.title as event_title, e.start_time, e.image_url, v.name as venue_name, s.section, s.seat_row, s.seat_number
+            FROM tickets t
+            LEFT JOIN events e ON t.event_id = e.id
+            LEFT JOIN venues v ON e.venue_id = v.id
+            LEFT JOIN seats s ON t.seat_id = s.id
+            WHERE t.id = $1
+        `, [ticket_id]);
+
+        const ticketInfo = detailsQuery.rows[0] || {};
+        const eventTitle = ticketInfo.event_title || ticketInfo.event_name || 'Live Event';
+        const venueName = ticketInfo.venue_name || 'AT&T Stadium';
+        const startTime = ticketInfo.start_time
+            ? new Date(ticketInfo.start_time).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
+            : 'Sun, Aug 16, 2026, 8:00 PM';
+        const seatText = ticketInfo.section ? `Section ${ticketInfo.section}, Row ${ticketInfo.seat_row}, Seat ${ticketInfo.seat_number}` : (req.body.seat_info || 'General Admission');
+        const imageUrl = ticketInfo.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80';
+
         const acceptLink = `http://localhost:5000/api/tickets/accept?token=${transferToken}`;
         const safeOwner = escapeHtml(owner_id);
-        const safeEvent = escapeHtml(event_name);
-        const safeSeat = escapeHtml(seat_info);
+        const safeEvent = escapeHtml(eventTitle);
+        const safeSeat = escapeHtml(seatText);
+        const safeDate = escapeHtml(startTime);
+        const safeVenue = escapeHtml(venueName);
+        const safeImage = escapeHtml(imageUrl);
 
         const mailOptions = {
-            from: '"Ticketmaster Platform" <' + process.env.EMAIL_USER + '>',
+            from: '"Ticketmaster" <' + process.env.EMAIL_USER + '>',
             to: recipient_email,
-            subject: `${owner_id} sent you a ticket to ${event_name}`,
+            subject: `${owner_id} has sent you a ticket to ${eventTitle}!`,
             html: `
-                <div style="margin:0; padding:24px 12px; background:#f2f4f7; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20;">
+                <div style="margin:0; padding:24px 12px; background:#121212; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
+                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20; border-radius:8px; overflow:hidden;">
+                        <!-- Greeting -->
                         <tr>
-                            <td style="padding:8px 30px 0;">
-                                <div style="color:#026cdf; font-size:20px; line-height:28px; font-weight:900; font-style:italic;">ticketmaster</div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:44px 30px 30px;">
-                                <h1 style="margin:0; color:#ffffff; font-size:21px; line-height:1.5; font-weight:700;">${safeOwner} has transferred you 1 ticket to<br>${safeEvent}</h1>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:0 30px 26px; color:#d4d4d8; font-size:15px; line-height:1.6;">
-                                <p style="margin:0 0 14px;">Hi there,</p>
+                            <td style="padding:30px 30px 20px; color:#d4d4d8; font-size:15px; line-height:1.6;">
+                                <p style="margin:0 0 16px;">Hi ${escapeHtml(recipient_email.split('@')[0])},</p>
                                 <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
                             </td>
                         </tr>
+                        <!-- Dynamic Event Image Banner -->
                         <tr>
-                            <td style="padding:0 30px 0;">
-                                <div style="height:18px; background:#242429; color:#a8a8ad; font-size:12px; line-height:18px;">&nbsp;</div>
-                                <div style="padding:26px 24px 24px; background:#242429;">
-                                    <h2 style="margin:0 0 10px; color:#ffffff; font-size:16px; line-height:1.4;">${safeEvent}</h2>
-                                    <p style="margin:0 0 10px; color:#96969d; font-size:14px; line-height:1.5;">Ticket transfer from ${safeOwner}</p>
-                                    <p style="margin:0 0 10px; color:#ffffff; font-size:15px; line-height:1.5; font-weight:700;">${safeSeat}</p>
-                                    <p style="margin:0; color:#96969d; font-size:14px; line-height:1.5;">Transfer Pending</p>
+                            <td style="padding:0 30px;">
+                                <div style="width:100%; height:220px; background:url('${safeImage}') center/cover no-repeat; border-radius:4px 4px 0 0;"></div>
+                            </td>
+                        </tr>
+                        <!-- Ticket Details Container -->
+                        <tr>
+                            <td style="padding:0 30px 30px;">
+                                <div style="background:#242429; padding:24px; border-radius:0 0 4px 4px;">
+                                    <!-- Dynamic Event Title & Actual Date/Venue -->
+                                    <h2 style="margin:0 0 8px; color:#ffffff; font-size:16px; line-height:1.4; font-weight:700;">${safeEvent}</h2>
+                                    <p style="margin:0 0 16px; color:#96969d; font-size:13px; line-height:1.5;">${safeDate} • ${safeVenue}</p>
+
+                                    <!-- Seats & Status -->
+                                    <div style="border-top:1px solid #2f2f36; padding-top:16px; margin-bottom:24px;">
+                                        <p style="margin:0 0 6px; color:#ffffff; font-size:15px; font-weight:700;">${safeSeat}</p>
+                                        <p style="margin:0; color:#96969d; font-size:13px;">Transfer Pending</p>
+                                    </div>
+
+                                    <!-- Accept Button -->
+                                    <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; font-weight:700; border-radius:4px; margin-bottom:24px;">ACCEPT TICKETS</a>
+
+                                    <!-- Fine Print / Terms -->
+                                    <p style="margin:0 0 12px; color:#96969d; font-size:11px; line-height:1.5;">
+                                        ℹ️ By clicking 'ACCEPT TICKETS', you agree to our Terms of Use and any applicable ticket back terms.
+                                    </p>
+                                    <p style="margin:0 0 12px; color:#96969d; font-size:11px; line-height:1.5;">
+                                        If the ticket(s) were obtained fraudulently by the person transferring them, they may be canceled at any time and removed from your account.
+                                    </p>
+                                    <p style="margin:0; color:#96969d; font-size:11px; font-weight:bold;">
+                                        This email is NOT your ticket.
+                                    </p>
                                 </div>
                             </td>
                         </tr>
+                        <!-- What's Next Section -->
                         <tr>
-                            <td style="padding:24px 30px 34px;">
-                                <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; line-height:20px; font-weight:700; letter-spacing:.2px;">ACCEPT TICKETS</a>
+                            <td style="padding:0 30px 30px; color:#96969d; font-size:13px; line-height:1.5;">
+                                <p style="margin:0 0 8px; color:#ffffff; font-weight:bold; font-size:14px;">What's Next?</p>
+                                <p style="margin:0;">Once you've accepted the ticket(s), we'll send you another email confirming that the process is complete.</p>
                             </td>
                         </tr>
                     </table>
                 </div>
             `
         };
-
         await transporter.sendMail(mailOptions);
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
@@ -360,20 +396,17 @@ app.get('/api/tickets/accept', async (req, res) => {
 
         const ticket = rows[0];
         
-        // Officially change ownership in the database
         await pgPool.query(`
             UPDATE tickets 
             SET user_id = $1, transfer_token = NULL, transfer_recipient_email = NULL, transfer_status = 'none' 
             WHERE id = $2
         `, [ticket.transfer_recipient_email, ticket.id]);
 
-        // Beautiful success page with the 30-minute notice!
         res.send(`
             <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin-top: 60px; background-color: #121212; color: white; padding: 40px; border-radius: 10px; max-width: 500px; margin-left: auto; margin-right: auto; box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
                 <h1 style="color: #4CAF50; margin-bottom: 10px;">🎉 Ticket Accepted!</h1>
                 <p style="font-size: 18px; color: #cccccc;">You have successfully claimed Ticket #${ticket.id}.</p>
                 
-                <!-- 30 Minute Notification Alert -->
                 <div style="background-color: #242429; padding: 20px; border-radius: 8px; margin-top: 30px; border-left: 5px solid #026cdf; text-align: left;">
                     <p style="font-size: 16px; margin: 0; font-weight: bold; color: #ffffff; display: flex; align-items: center;">
                         <span style="font-size: 24px; margin-right: 10px;">⏳</span> 
@@ -399,7 +432,6 @@ const bcrypt = require('bcrypt');
 // USER AUTHENTICATION ROUTES
 // ==========================================
 
-// 1. Register a New User
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { email, password, name } = req.body;
@@ -407,17 +439,14 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ error: 'Please provide name, email, and password.' });
         }
 
-        // Check if user already exists
         const userCheck = await pgPool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (userCheck.rows.length > 0) {
             return res.status(400).json({ error: 'An account with this email already exists.' });
         }
 
-        // Hash the password securely
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
-        // Save user to database
         const newUser = await pgPool.query(
             'INSERT INTO users (name, email, password) VALUES ($1, $2, $3) RETURNING id, name, email',
             [name, email, hashedPassword]
@@ -430,7 +459,6 @@ app.post('/api/auth/register', async (req, res) => {
     }
 });
 
-// 2. Login User
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -438,7 +466,6 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ error: 'Please provide both email and password.' });
         }
 
-        // Find user by email
         const result = await pgPool.query('SELECT * FROM users WHERE email = $1', [email]);
         if (result.rows.length === 0) {
             return res.status(400).json({ error: 'Invalid email or password.' });
@@ -446,7 +473,6 @@ app.post('/api/auth/login', async (req, res) => {
 
         const user = result.rows[0];
 
-        // Compare submitted password with the hashed password in the DB
         const validPassword = await bcrypt.compare(password, user.password);
         if (!validPassword) {
             return res.status(400).json({ error: 'Invalid email or password.' });
@@ -484,19 +510,16 @@ app.get('/api/setup-users', async (req, res) => {
 // ACTIVE CHECKOUT & REDIS SEAT LOCKING
 // ==========================================
 
-// 1. Temporarily lock a seat in Redis (Expires in 5 minutes)
 app.post('/api/seats/lock', async (req, res) => {
     try {
         const { seat_id, user_id } = req.body;
         const lockKey = `lock:seat:${seat_id}`;
 
-        // Check if seat is already locked by someone else
         const existingLock = await redisClient.get(lockKey);
         if (existingLock) {
             return res.status(400).json({ error: 'This seat is currently locked by another user!' });
         }
 
-        // Lock seat for 300 seconds (5 minutes)
         await redisClient.setEx(lockKey, 300, user_id.toString());
         res.json({ status: 'success', message: 'Seat locked successfully for checkout!' });
     } catch (err) {
@@ -505,7 +528,6 @@ app.post('/api/seats/lock', async (req, res) => {
     }
 });
 
-// 2. Complete Checkout & Assign Ticket to User
 app.post('/api/checkout', async (req, res) => {
     try {
         const { seat_id, user_email, price } = req.body;
@@ -515,24 +537,19 @@ app.post('/api/checkout', async (req, res) => {
             return res.status(400).json({ error: 'Missing user_email or seat_id' });
         }
 
-        // Get seat details to find event
         const seatResult = await pgPool.query('SELECT event_id FROM seats WHERE id = $1', [seat_id]);
         if (seatResult.rows.length === 0) {
             return res.status(400).json({ error: 'Seat not found' });
         }
         const event_id = seatResult.rows[0].event_id;
 
-        // Get event name
         const eventResult = await pgPool.query('SELECT title FROM events WHERE id = $1', [event_id]);
         const event_name = eventResult.rows.length > 0 ? eventResult.rows[0].title : 'Live Event';
 
-        // Clear the Redis lock
         await redisClient.del(lockKey);
 
-        // Update seat status to 'sold' in PostgreSQL
         await pgPool.query(`UPDATE seats SET status = 'sold' WHERE id = $1`, [seat_id]);
 
-        // Insert ticket with the seat, price, and event name
         const newTicket = await pgPool.query(`
             INSERT INTO tickets (event_id, seat_id, user_id, price, status, transfer_status, event_name) 
             VALUES ($1, $2, $3, $4, 'available', 'none', $5) 
@@ -550,7 +567,6 @@ app.post('/api/checkout', async (req, res) => {
     }
 });
 
-// Get tickets for a specific logged-in user
 app.get('/api/user/tickets', async (req, res) => {
     try {
         const email = req.query.email;
@@ -570,11 +586,8 @@ const PORT = process.env.PORT || 5000;
 async function startServer() {
     try {
         await redisClient.connect();
-        
-        // First initialize the database tables
         await initializeDatabase();
         
-        // Start the server
         app.listen(PORT, () => {
             console.log(`🚀 Server is running on http://localhost:${PORT}`);
         });
