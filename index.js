@@ -506,7 +506,23 @@ app.get('/api/user/tickets', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
+app.get('/api/fix-users-table', async (req, res) => {
+    try {
+        await pgPool.query(`DROP TABLE IF EXISTS users CASCADE;`);
+        await pgPool.query(`
+            CREATE TABLE users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        res.send('✅ Users table successfully fixed with password column!');
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
 // ==========================================
 // START SERVER
 // ==========================================
