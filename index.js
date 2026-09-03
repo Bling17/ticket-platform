@@ -47,8 +47,7 @@ redisClient.on('error', (err) => console.log('Redis Error:', err));
 // ==========================================
 async function initializeDatabase() {
     try {
-        // Create tables safely without dropping if they already exist,
-        // to prevent wiping user accounts on every server restart!
+        // 1. Create tables if they don't exist
         await pgPool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -97,7 +96,18 @@ async function initializeDatabase() {
                 transfer_status VARCHAR(50) DEFAULT 'none'
             );
         `);
-        console.log('✅ Database tables initialized successfully');
+
+        // 2. MIGRATION FIX: If the table already existed with 'password_hash', rename it to 'password'
+        await pgPool.query(`
+            DO $$
+            BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='users' and column_name='password_hash') THEN
+                    ALTER TABLE users RENAME COLUMN password_hash TO password;
+                END IF;
+            END $$;
+        `);
+
+        console.log('✅ Database tables initialized and verified successfully');
     } catch (err) {
         console.error('❌ Database initialization error:', err.message);
     }
