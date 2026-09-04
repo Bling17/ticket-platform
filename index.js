@@ -4,12 +4,14 @@ const { Pool } = require('pg');
 const redis = require('redis');
 const cors = require('cors');
 require('dotenv').config();
-const { Resend } = require('resend');
+const SibApiV3Sdk = require('@getbrevo/brevo');
 
 // ==========================================
-// RESEND EMAIL SETUP
+// BREVO EMAIL SETUP
 // ==========================================
-const resend = new Resend(process.env.RESEND_API_KEY);
+let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+let apiKey = apiInstance.authentications['apiKey'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
 
 const app = express();
 app.use(cors());
@@ -320,13 +322,14 @@ app.post('/api/tickets/transfer', async (req, res) => {
             </div>
         `;
 
-        // Send email via Resend API
-        await resend.emails.send({
-            from: 'Ticketmaster <onboarding@resend.dev>',
-            to: recipient_email,
-            subject: `${owner_id} has sent you a ticket to ${eventTitle}!`,
-            html: htmlContent
-        });
+        // Send email via Brevo API
+        let sendSmtpEmail = new SibApiV3Sdk.SendSmtpEmail();
+        sendSmtpEmail.subject = `${owner_id} has sent you a ticket to ${eventTitle}!`;
+        sendSmtpEmail.htmlContent = htmlContent;
+        sendSmtpEmail.sender = { name: "Ticketmaster", email: process.env.APPROVED_BREVO_SENDER };
+        sendSmtpEmail.to = [{ email: recipient_email }];
+
+        await apiInstance.sendTransacEmail(sendSmtpEmail);
 
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
