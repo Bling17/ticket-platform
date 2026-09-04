@@ -10,8 +10,7 @@ const SibApiV3Sdk = require('@getbrevo/brevo');
 // BREVO EMAIL SETUP
 // ==========================================
 let apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-let apiKey = apiInstance.authentications['apiKey'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
+apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 const app = express();
 app.use(cors());
