@@ -4,20 +4,12 @@ const { Pool } = require('pg');
 const redis = require('redis');
 const cors = require('cors');
 require('dotenv').config();
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
 
 // ==========================================
-// EMAIL SETUP
+// RESEND EMAIL SETUP
 // ==========================================
-const transporter = nodemailer.createTransport({
-    host: 'smtp.gmail.com',
-    port: 587,
-    secure: false, // false for port 587 (TLS)
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASSWORD
-    }
-});
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 app.use(cors());
@@ -286,7 +278,6 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const seatText = ticketInfo.section ? `Section ${ticketInfo.section}, Row ${ticketInfo.seat_row}, Seat ${ticketInfo.seat_number}` : (req.body.seat_info || 'General Admission');
         const imageUrl = ticketInfo.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80';
 
-        // Dynamically use the host protocol and domain (supports Render and Localhost automatically)
         const protocol = req.headers['x-forwarded-proto'] || req.protocol;
         const host = req.get('host');
         const acceptLink = `${protocol}://${host}/api/tickets/accept?token=${transferToken}`;
@@ -298,42 +289,45 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const safeVenue = escapeHtml(venueName);
         const safeImage = escapeHtml(imageUrl);
 
-        const mailOptions = {
-            from: '"Ticketmaster" <' + process.env.EMAIL_USER + '>',
+        const htmlContent = `
+            <div style="margin:0; padding:24px 12px; background:#121212; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
+                <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20; border-radius:8px; overflow:hidden;">
+                    <tr>
+                        <td style="padding:30px 30px 20px; color:#d4d4d8; font-size:15px; line-height:1.6;">
+                            <p style="margin:0 0 16px;">Hi ${escapeHtml(recipient_email.split('@')[0])},</p>
+                            <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 30px;">
+                            <div style="width:100%; height:220px; background:url('${safeImage}') center/cover no-repeat; border-radius:4px 4px 0 0;"></div>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:0 30px 30px;">
+                            <div style="background:#242429; padding:24px; border-radius:0 0 4px 4px;">
+                                <h2 style="margin:0 0 8px; color:#ffffff; font-size:16px; line-height:1.4; font-weight:700;">${safeEvent}</h2>
+                                <p style="margin:0 0 16px; color:#96969d; font-size:13px; line-height:1.5;">${safeDate} • ${safeVenue}</p>
+                                <div style="border-top:1px solid #2f2f36; padding-top:16px; margin-bottom:24px;">
+                                    <p style="margin:0 0 6px; color:#ffffff; font-size:15px; font-weight:700;">${safeSeat}</p>
+                                    <p style="margin:0; color:#96969d; font-size:13px;">Transfer Pending</p>
+                                </div>
+                                <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; font-weight:700; border-radius:4px; margin-bottom:24px;">ACCEPT TICKETS</a>
+                            </div>
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        `;
+
+        // Send email via Resend API
+        await resend.emails.send({
+            from: 'Ticketmaster <onboarding@resend.dev>',
             to: recipient_email,
             subject: `${owner_id} has sent you a ticket to ${eventTitle}!`,
-            html: `
-                <div style="margin:0; padding:24px 12px; background:#121212; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
-                    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20; border-radius:8px; overflow:hidden;">
-                        <tr>
-                            <td style="padding:30px 30px 20px; color:#d4d4d8; font-size:15px; line-height:1.6;">
-                                <p style="margin:0 0 16px;">Hi ${escapeHtml(recipient_email.split('@')[0])},</p>
-                                <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:0 30px;">
-                                <div style="width:100%; height:220px; background:url('${safeImage}') center/cover no-repeat; border-radius:4px 4px 0 0;"></div>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td style="padding:0 30px 30px;">
-                                <div style="background:#242429; padding:24px; border-radius:0 0 4px 4px;">
-                                    <h2 style="margin:0 0 8px; color:#ffffff; font-size:16px; line-height:1.4; font-weight:700;">${safeEvent}</h2>
-                                    <p style="margin:0 0 16px; color:#96969d; font-size:13px; line-height:1.5;">${safeDate} • ${safeVenue}</p>
-                                    <div style="border-top:1px solid #2f2f36; padding-top:16px; margin-bottom:24px;">
-                                        <p style="margin:0 0 6px; color:#ffffff; font-size:15px; font-weight:700;">${safeSeat}</p>
-                                        <p style="margin:0; color:#96969d; font-size:13px;">Transfer Pending</p>
-                                    </div>
-                                    <a href="${acceptLink}" style="display:block; padding:16px 20px; background:#918ff2; color:#111118; text-align:center; text-decoration:none; font-size:15px; font-weight:700; border-radius:4px; margin-bottom:24px;">ACCEPT TICKETS</a>
-                                </div>
-                            </td>
-                        </tr>
-                    </table>
-                </div>
-            `
-        };
-        await transporter.sendMail(mailOptions);
+            html: htmlContent
+        });
+
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
     } catch (err) {
         console.error('Transfer Error:', err);
