@@ -247,72 +247,7 @@ async function renderDynamicSeats(eventId) {
 }
 
 // ==========================================
-// 5. TRANSFER & WALLET LOGIC
-// ==========================================
-const navMyTicketsBtn = document.getElementById('nav-my-tickets');
-const walletSection = document.getElementById('my-tickets-section');
-const mainGrid = document.getElementById('dynamic-event-grid');
-const transferModal = document.getElementById('transfer-modal');
-
-// Open the Wallet
-// Open / Close the Modal
-document.getElementById('open-transfer-btn')?.addEventListener('click', () => {
-    transferModal.style.display = 'flex';
-    transferModal.classList.remove('hidden');
-});
-document.getElementById('close-modal-btn')?.addEventListener('click', () => {
-    transferModal.style.display = 'none';
-    transferModal.classList.add('hidden');
-    document.getElementById('transfer-message').textContent = '';
-});
-
-// Actually Send the Email
-document.getElementById('submit-transfer-btn')?.addEventListener('click', async () => {
-    const email = document.getElementById('friend-email').value;
-    const senderName = document.getElementById('transfer-sender-name').value || 'Rowland Joshua'; // Fallback to your name!
-    const eventName = document.getElementById('transfer-event-name').value || 'Live Event';
-    const seatInfo = document.getElementById('transfer-seat-info').value || 'General Admission';
-    const msg = document.getElementById('transfer-message');
-    
-    if (!email) {
-        msg.textContent = 'Please enter an email!';
-        msg.style.color = '#f44336';
-        return;
-    }
-
-    msg.textContent = 'Generating secure link and sending email...';
-    msg.style.color = '#999';
-
-    try {
-        const response = await fetch('/api/tickets/transfer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                ticket_id: 1, 
-                owner_id: senderName, // Passing your typed name here!
-                recipient_email: email,
-                event_name: eventName,
-                seat_info: seatInfo
-            })
-        });
-        
-        const data = await response.json();
-        
-        if (response.ok) {
-            msg.textContent = '✅ Success! Email sent.';
-            msg.style.color = '#4CAF50';
-        } else {
-            msg.textContent = `❌ ${data.error}`;
-            msg.style.color = '#f44336';
-        }
-    } catch (error) {
-        msg.textContent = 'Server connection failed.';
-        msg.style.color = '#f44336';
-    }
-});
-
-// ==========================================
-// 6. AUTHENTICATION & LOGIN UI LOGIC
+// 5. AUTHENTICATION & LOGIN UI LOGIC
 // ==========================================
 const authModal = document.getElementById('auth-modal');
 const navSigninBtn = document.getElementById('nav-signin-btn');
@@ -417,7 +352,7 @@ if (authSubmitBtn) {
 }
 
 // ==========================================
-// 7. NAVBAR USER STATE DISPLAY
+// 6. NAVBAR USER STATE DISPLAY
 // ==========================================
 function checkUserSession() {
     const navLinksContainer = document.getElementById('nav-links-container');
@@ -494,7 +429,7 @@ function checkUserSession() {
 checkUserSession();
 
 // ==========================================
-// TICKET TRANSFER FUNCTIONALITY
+// 7. TICKET TRANSFER FUNCTIONALITY
 // ==========================================
 
 // Create transfer modal HTML if it doesn't exist
@@ -561,9 +496,9 @@ async function submitTransfer() {
     try {
         const currentUser = JSON.parse(localStorage.getItem('currentUser'));
         const ownerEmail = currentUser?.email || 'Unknown User';
-        const ownerName = currentUser?.name || 'A Friend';
+        const ownerName = currentUser?.name || 'Ticket Owner';
 
-        // Get current user and event info from the wallet display
+        // Fetch user tickets to grab the exact selected ticket data
         const response = await fetch(`/api/user/tickets?email=${encodeURIComponent(ownerEmail)}`);
         const tickets = await response.json();
         const ticketData = tickets.find(t => t.id === currentTransferTicketId);
@@ -574,6 +509,10 @@ async function submitTransfer() {
             return;
         }
 
+        statusEl.textContent = 'Generating secure link and sending email...';
+        statusEl.style.color = '#999';
+        statusEl.style.display = 'block';
+
         const transferRes = await fetch('/api/tickets/transfer', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -582,9 +521,9 @@ async function submitTransfer() {
                 owner_id: ownerName,
                 recipient_email: recipientEmail,
                 event_name: ticketData.event_name || 'Live Event',
-                seat_info: ticketData.seat_id ? `Seat #${ticketData.seat_id}` : 'General Admission',
+                seat_info: ticketData.seat_id ? `Seat ID #${ticketData.seat_id}` : 'General Admission',
                 event_date: ticketData.event_date || 'Sun, Aug 16, 2026, 8:00 PM',
-                venue_name: ticketData.venue_name || 'AT&T Stadium',
+                venue_name: ticketData.venue_name || 'Live Venue',
                 image_url: ticketData.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80'
             })
         });
@@ -592,22 +531,24 @@ async function submitTransfer() {
         const result = await transferRes.json();
 
         if (transferRes.ok) {
-            statusEl.textContent = '✅ Ticket transfer initiated! Check your friend\'s email.';
+            statusEl.textContent = '✅ Ticket transfer initiated! Check the inbox.';
             statusEl.style.color = '#4CAF50';
             statusEl.style.display = 'block';
             
             setTimeout(() => {
                 closeTransferModal();
-                // Reload wallet to update ticket status
-                document.getElementById('nav-wallet-btn')?.click();
+                // Refresh wallet view
+                document.getElementById('nav-my-tickets')?.click();
             }, 2000);
         } else {
             statusEl.textContent = `❌ ${result.error || 'Transfer failed'}`;
+            statusEl.style.color = '#f44336';
             statusEl.style.display = 'block';
         }
     } catch (err) {
         console.error('Transfer error:', err);
         statusEl.textContent = '❌ An error occurred. Please try again.';
+        statusEl.style.color = '#f44336';
         statusEl.style.display = 'block';
     }
 }
