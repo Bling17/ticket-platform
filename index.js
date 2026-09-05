@@ -4,12 +4,12 @@ const { Pool } = require('pg');
 const redis = require('redis');
 const cors = require('cors');
 require('dotenv').config();
-const { BrevoClient } = require('@getbrevo/brevo');
+const { Resend } = require('resend');
 
 // ==========================================
-// BREVO EMAIL SETUP
+// RESEND EMAIL SETUP
 // ==========================================
-const brevoClient = new BrevoClient({ apiKey: process.env.BREVO_API_KEY });
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const app = express();
 app.use(cors());
@@ -102,7 +102,6 @@ app.get('/api/search', async (req, res) => {
         const searchTerm = keyword ? keyword : 'Music';
         const url = `https://app.ticketmaster.com/discovery/v2/events.json?apikey=${process.env.TICKETMASTER_API_KEY}&keyword=${encodeURIComponent(searchTerm)}`;
         
-        console.log("Fetching from URL:", url);
         const response = await fetch(url);
         const data = await response.json();
 
@@ -320,12 +319,12 @@ app.post('/api/tickets/transfer', async (req, res) => {
             </div>
         `;
 
-        // Send email via Brevo API
-        await brevoClient.transactionalEmails.sendTransacEmail({
+        // Send email via Resend API
+        await resend.emails.send({
+            from: 'Ticketmaster <onboarding@resend.dev>',
+            to: recipient_email,
             subject: `${owner_id} has sent you a ticket to ${eventTitle}!`,
-            htmlContent,
-            sender: { name: 'Ticketmaster', email: process.env.APPROVED_BREVO_SENDER },
-            to: [{ email: recipient_email }]
+            html: htmlContent
         });
 
         res.json({ message: '✅ Transfer initiated! Check the inbox.' });
