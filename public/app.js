@@ -429,12 +429,11 @@ function checkUserSession() {
 checkUserSession();
 
 // ==========================================
-// TICKET TRANSFER MODAL WIRING
+// 7. TICKET TRANSFER MODAL WIRING
 // ==========================================
 
 let currentTransferTicketId = null;
 
-// Function called when clicking "Transfer to Friend" on a ticket card
 function openTransferModal(ticketId) {
     currentTransferTicketId = ticketId;
     const modal = document.getElementById('transfer-modal');
@@ -442,8 +441,11 @@ function openTransferModal(ticketId) {
         modal.style.display = 'flex';
         modal.classList.remove('hidden');
 
-        // Optional: Pre-fill fields if desired, or clear them out
-        document.getElementById('transfer-status').style.display = 'none';
+        const statusEl = document.getElementById('transfer-status');
+        if (statusEl) {
+            statusEl.style.display = 'none';
+            statusEl.textContent = '';
+        }
     }
 }
 
@@ -456,23 +458,27 @@ function closeTransferModal() {
     currentTransferTicketId = null;
 }
 
-// Wire up the Cancel button/link
-document.querySelectorAll('#transfer-modal a, #transfer-modal span, #transfer-modal button').forEach((element) => {
-    element.addEventListener('click', (e) => {
-    if (e.target.textContent.trim() === 'Cancel') {
+// Expose close function globally so inline onclick elements can access it
+window.closeTransferModal = closeTransferModal;
+
+// Global listener for modal buttons (Cancel & Send Ticket Securely)
+document.addEventListener('click', async (e) => {
+    const targetText = e.target.textContent ? e.target.textContent.trim() : '';
+
+    // Handle Cancel click inside transfer modal
+    if (targetText === 'Cancel' && e.target.closest('#transfer-modal')) {
         e.preventDefault();
         closeTransferModal();
+        return;
     }
-    });
-});
 
-// Wire up the "Send Ticket Securely" button functionality
-document.addEventListener('click', async (e) => {
-    if (e.target && e.target.textContent.trim() === 'Send Ticket Securely') {
-        const senderName = document.querySelectorAll('#transfer-modal input')[0]?.value.trim();
-        const eventName = document.querySelectorAll('#transfer-modal input')[1]?.value.trim();
-        const seatInfo = document.querySelectorAll('#transfer-modal input')[2]?.value.trim();
-        const recipientEmail = document.querySelectorAll('#transfer-modal input')[3]?.value.trim();
+    // Handle Send Ticket Securely click
+    if (targetText === 'Send Ticket Securely' && e.target.closest('#transfer-modal')) {
+        const modalInputs = document.querySelectorAll('#transfer-modal input');
+        const senderName = modalInputs[0]?.value.trim();
+        const eventName = modalInputs[1]?.value.trim();
+        const seatInfo = modalInputs[2]?.value.trim();
+        const recipientEmail = modalInputs[3]?.value.trim();
 
         const statusEl = document.getElementById('transfer-status') || (() => {
             const p = document.createElement('p');
@@ -535,6 +541,3 @@ document.addEventListener('click', async (e) => {
         }
     }
 });
-
-// Also make sure your Cancel button works directly via onclick if needed
-window.closeTransferModal = closeTransferModal;
