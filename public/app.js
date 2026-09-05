@@ -429,42 +429,21 @@ function checkUserSession() {
 checkUserSession();
 
 // ==========================================
-// 7. TICKET TRANSFER FUNCTIONALITY
+// TICKET TRANSFER MODAL WIRING
 // ==========================================
 
-// Create transfer modal HTML if it doesn't exist
-if (!document.getElementById('transfer-modal')) {
-    const modalHTML = `
-        <div id="transfer-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
-            <div style="background: #1a1a1f; padding: 40px; border-radius: 10px; max-width: 500px; color: white; box-shadow: 0 10px 40px rgba(0,0,0,0.5);">
-                <h2 style="color: #026cdf; margin-top: 0;">Transfer Ticket to Friend</h2>
-                <p style="color: #aaa;">Enter your friend's email to transfer this ticket</p>
-                
-                <input type="email" id="transfer-recipient-email" placeholder="Friend's Email Address" style="width: 100%; padding: 12px; margin: 15px 0; border: none; border-radius: 4px; background: #333; color: white; font-size: 14px;" />
-                
-                <div style="display: flex; gap: 10px; margin-top: 25px;">
-                    <button onclick="closeTransferModal()" style="flex: 1; padding: 12px; background: #333; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Cancel</button>
-                    <button onclick="submitTransfer()" style="flex: 1; padding: 12px; background: #026cdf; color: white; border: none; border-radius: 4px; cursor: pointer; font-weight: bold;">Send Ticket</button>
-                </div>
-                <p id="transfer-status" style="color: #f44336; text-align: center; margin-top: 15px; display: none;"></p>
-            </div>
-        </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', modalHTML);
-}
-
-// Store current ticket being transferred
 let currentTransferTicketId = null;
 
+// Function called when clicking "Transfer to Friend" on a ticket card
 function openTransferModal(ticketId) {
     currentTransferTicketId = ticketId;
     const modal = document.getElementById('transfer-modal');
     if (modal) {
         modal.style.display = 'flex';
         modal.classList.remove('hidden');
-        document.getElementById('transfer-recipient-email').value = '';
+
+        // Optional: Pre-fill fields if desired, or clear them out
         document.getElementById('transfer-status').style.display = 'none';
-        document.getElementById('transfer-status').textContent = '';
     }
 }
 
@@ -477,34 +456,43 @@ function closeTransferModal() {
     currentTransferTicketId = null;
 }
 
-async function submitTransfer() {
-    const recipientEmail = document.getElementById('transfer-recipient-email').value.trim();
-    const statusEl = document.getElementById('transfer-status');
-    
-    if (!recipientEmail || !recipientEmail.includes('@')) {
-        statusEl.textContent = '❌ Please enter a valid email address';
-        statusEl.style.display = 'block';
-        return;
+// Wire up the Cancel button/link
+document.querySelectorAll('#transfer-modal a, #transfer-modal span, #transfer-modal button').forEach((element) => {
+    element.addEventListener('click', (e) => {
+    if (e.target.textContent.trim() === 'Cancel') {
+        e.preventDefault();
+        closeTransferModal();
     }
-    
-    if (!currentTransferTicketId) {
-        statusEl.textContent = '❌ No ticket selected';
-        statusEl.style.display = 'block';
-        return;
-    }
+    });
+});
 
-    try {
-        const currentUser = JSON.parse(localStorage.getItem('currentUser'));
-        const ownerEmail = currentUser?.email || 'Unknown User';
-        const ownerName = currentUser?.name || 'Ticket Owner';
+// Wire up the "Send Ticket Securely" button functionality
+document.addEventListener('click', async (e) => {
+    if (e.target && e.target.textContent.trim() === 'Send Ticket Securely') {
+        const senderName = document.querySelectorAll('#transfer-modal input')[0]?.value.trim();
+        const eventName = document.querySelectorAll('#transfer-modal input')[1]?.value.trim();
+        const seatInfo = document.querySelectorAll('#transfer-modal input')[2]?.value.trim();
+        const recipientEmail = document.querySelectorAll('#transfer-modal input')[3]?.value.trim();
 
-        // Fetch user tickets to grab the exact selected ticket data
-        const response = await fetch(`/api/user/tickets?email=${encodeURIComponent(ownerEmail)}`);
-        const tickets = await response.json();
-        const ticketData = tickets.find(t => t.id === currentTransferTicketId);
+        const statusEl = document.getElementById('transfer-status') || (() => {
+            const p = document.createElement('p');
+            p.id = 'transfer-status';
+            p.style.textAlign = 'center';
+            p.style.marginTop = '15px';
+            document.querySelector('#transfer-modal > div').appendChild(p);
+            return p;
+        })();
 
-        if (!ticketData) {
-            statusEl.textContent = '❌ Ticket not found';
+        if (!recipientEmail || !recipientEmail.includes('@')) {
+            statusEl.textContent = '❌ Please enter a valid recipient email address.';
+            statusEl.style.color = '#f44336';
+            statusEl.style.display = 'block';
+            return;
+        }
+
+        if (!currentTransferTicketId) {
+            statusEl.textContent = '❌ No ticket selected.';
+            statusEl.style.color = '#f44336';
             statusEl.style.display = 'block';
             return;
         }
@@ -513,42 +501,40 @@ async function submitTransfer() {
         statusEl.style.color = '#999';
         statusEl.style.display = 'block';
 
-        const transferRes = await fetch('/api/tickets/transfer', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                ticket_id: currentTransferTicketId,
-                owner_id: ownerName,
-                recipient_email: recipientEmail,
-                event_name: ticketData.event_name || 'Live Event',
-                seat_info: ticketData.seat_id ? `Seat ID #${ticketData.seat_id}` : 'General Admission',
-                event_date: ticketData.event_date || 'Sun, Aug 16, 2026, 8:00 PM',
-                venue_name: ticketData.venue_name || 'Live Venue',
-                image_url: ticketData.image_url || 'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?auto=format&fit=crop&w=600&q=80'
-            })
-        });
+        try {
+            const transferRes = await fetch('/api/tickets/transfer', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    ticket_id: currentTransferTicketId,
+                    owner_id: senderName || 'Rowland Joshua',
+                    recipient_email: recipientEmail,
+                    event_name: eventName || 'Live Event',
+                    seat_info: seatInfo || 'General Admission'
+                })
+            });
 
-        const result = await transferRes.json();
+            const result = await transferRes.json();
 
-        if (transferRes.ok) {
-            statusEl.textContent = '✅ Ticket transfer initiated! Check the inbox.';
-            statusEl.style.color = '#4CAF50';
-            statusEl.style.display = 'block';
-            
-            setTimeout(() => {
-                closeTransferModal();
-                // Refresh wallet view
-                document.getElementById('nav-my-tickets')?.click();
-            }, 2000);
-        } else {
-            statusEl.textContent = `❌ ${result.error || 'Transfer failed'}`;
+            if (transferRes.ok) {
+                statusEl.textContent = '✅ Success! Email sent.';
+                statusEl.style.color = '#4CAF50';
+
+                setTimeout(() => {
+                    closeTransferModal();
+                    document.getElementById('nav-my-tickets')?.click(); // Refresh wallet
+                }, 2000);
+            } else {
+                statusEl.textContent = `❌ ${result.error || 'Failed to send email.'}`;
+                statusEl.style.color = '#f44336';
+            }
+        } catch (err) {
+            console.error('Transfer error:', err);
+            statusEl.textContent = '❌ Network error while sending email.';
             statusEl.style.color = '#f44336';
-            statusEl.style.display = 'block';
         }
-    } catch (err) {
-        console.error('Transfer error:', err);
-        statusEl.textContent = '❌ An error occurred. Please try again.';
-        statusEl.style.color = '#f44336';
-        statusEl.style.display = 'block';
     }
-}
+});
+
+// Also make sure your Cancel button works directly via onclick if needed
+window.closeTransferModal = closeTransferModal;
