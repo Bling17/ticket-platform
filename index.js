@@ -288,12 +288,16 @@ app.post('/api/tickets/transfer', async (req, res) => {
         const safeVenue = escapeHtml(venueName);
         const safeImage = escapeHtml(imageUrl);
 
+        // Portfolio Demo Mode routing for Resend sandbox restriction
+        const targetInboxEmail = process.env.RESEND_TEST_INBOX || recipient_email;
+
         const htmlContent = `
             <div style="margin:0; padding:24px 12px; background:#121212; font-family:Arial,Helvetica,sans-serif; color:#ffffff;">
                 <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:600px; margin:0 auto; background:#1b1b20; border-radius:8px; overflow:hidden;">
                     <tr>
                         <td style="padding:30px 30px 20px; color:#d4d4d8; font-size:15px; line-height:1.6;">
-                            <p style="margin:0 0 16px;">Hi ${escapeHtml(recipient_email.split('@')[0])},</p>
+                            <p style="margin:0 0 8px; color:#918ff2; font-size:12px; text-transform:uppercase; font-weight:bold;">[Portfolio Demo Mode: Intended for ${escapeHtml(recipient_email)}]</p>
+                            <p style="margin:0 0 16px;">Hi there,</p>
                             <p style="margin:0;">There are ticket(s) waiting to be accepted in your account. Accepting the ticket(s) will allow you to enter the event easily, using your own phone.</p>
                         </td>
                     </tr>
@@ -322,7 +326,7 @@ app.post('/api/tickets/transfer', async (req, res) => {
         // Send email via Resend API
         await resend.emails.send({
             from: 'Ticketmaster <onboarding@resend.dev>',
-            to: recipient_email,
+            to: targetInboxEmail,
             subject: `${owner_id} has sent you a ticket to ${eventTitle}!`,
             html: htmlContent
         });
