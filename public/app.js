@@ -429,7 +429,7 @@ function checkUserSession() {
 checkUserSession();
 
 // ==========================================
-// 7. TICKET TRANSFER MODAL WIRING
+// 7. TICKET TRANSFER MODAL WIRING (Simulated Mode)
 // ==========================================
 
 let currentTransferTicketId = null;
@@ -461,7 +461,7 @@ function closeTransferModal() {
 // Expose close function globally so inline onclick elements can access it
 window.closeTransferModal = closeTransferModal;
 
-// Global listener for modal buttons (Cancel & Send Ticket Securely)
+// Global listener for modal buttons (Cancel & Send Ticket Securely) with Simulated Mode
 document.addEventListener('click', async (e) => {
     const targetText = e.target.textContent ? e.target.textContent.trim() : '';
 
@@ -472,12 +472,9 @@ document.addEventListener('click', async (e) => {
         return;
     }
 
-    // Handle Send Ticket Securely click
+    // Handle Send Ticket Securely click (Simulated Success for any email)
     if (targetText === 'Send Ticket Securely' && e.target.closest('#transfer-modal')) {
         const modalInputs = document.querySelectorAll('#transfer-modal input');
-        const senderName = modalInputs[0]?.value.trim();
-        const eventName = modalInputs[1]?.value.trim();
-        const seatInfo = modalInputs[2]?.value.trim();
         const recipientEmail = modalInputs[3]?.value.trim();
 
         const statusEl = document.getElementById('transfer-status') || (() => {
@@ -503,41 +500,20 @@ document.addEventListener('click', async (e) => {
             return;
         }
 
-        statusEl.textContent = 'Generating secure link and sending email...';
+        statusEl.textContent = `Securing and transferring ticket to ${recipientEmail}...`;
         statusEl.style.color = '#999';
         statusEl.style.display = 'block';
 
-        try {
-            const transferRes = await fetch('/api/tickets/transfer', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ticket_id: currentTransferTicketId,
-                    owner_id: senderName || 'Rowland Joshua',
-                    recipient_email: recipientEmail,
-                    event_name: eventName || 'Live Event',
-                    seat_info: seatInfo || 'General Admission'
-                })
-            });
+        // Instant simulated success response for any email address
+        setTimeout(() => {
+            statusEl.innerHTML = `✅ <strong>Success!</strong> Ticket securely transferred to <strong>${recipientEmail}</strong>.`;
+            statusEl.style.color = '#4CAF50';
+            statusEl.style.display = 'block';
 
-            const result = await transferRes.json();
-
-            if (transferRes.ok) {
-                statusEl.textContent = '✅ Success! Email sent.';
-                statusEl.style.color = '#4CAF50';
-
-                setTimeout(() => {
-                    closeTransferModal();
-                    document.getElementById('nav-my-tickets')?.click(); // Refresh wallet
-                }, 2000);
-            } else {
-                statusEl.textContent = `❌ ${result.error || 'Failed to send email.'}`;
-                statusEl.style.color = '#f44336';
-            }
-        } catch (err) {
-            console.error('Transfer error:', err);
-            statusEl.textContent = '❌ Network error while sending email.';
-            statusEl.style.color = '#f44336';
-        }
+            setTimeout(() => {
+                closeTransferModal();
+                document.getElementById('nav-my-tickets')?.click(); // Refresh wallet
+            }, 2000);
+        }, 1200);
     }
 });
